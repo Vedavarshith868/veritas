@@ -1,5 +1,8 @@
 # Veritas — provenance-first generative media studio
 
+**Live app:** https://veritas-one-alpha.vercel.app
+**Backend API:** https://veritas-backend-9iwa.onrender.com/api/health
+
 Built for the **Backblaze Generative Media Hackathon** (Genblaze + B2).
 
 Every AI-generated image/video/audio asset is uploaded to **Backblaze B2** with a
@@ -65,7 +68,15 @@ veritas/runs/<date>/<run_id>/manifest.json          # provenance record
 veritas/runs/<date>/<run_id>/assets/<asset_id>.<ext> # the media
 ```
 
+## Deployment
+- **Frontend:** Vercel (`frontend/`), auto-builds on push.
+- **Backend:** Render, provisioned from `render.yaml` (Blueprint). Secrets are set
+  directly in the Render dashboard, never committed.
+- `BACKEND_URL` (Vercel env var) points the frontend's `/api/*` rewrite at the
+  Render backend. `CORS_ORIGINS` (Render env var) locks the backend's CORS to
+  the deployed frontend origin.
+
 ## Security notes
 - `backend/.env` is git-ignored; never commit real keys.
-- The B2 application key is scoped to a single bucket (not the master key).
-- Regenerate the B2 key before making the repo public / submitting.
+- The B2 application keys are scoped to a single bucket each (not the master key).
+- All keys (B2, NVIDIA) were rotated immediately before this repo went public.

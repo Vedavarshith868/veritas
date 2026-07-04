@@ -186,6 +186,7 @@ export default function StudioPage() {
               {/* mode segmented control */}
               <div className="flex items-center gap-1 rounded-full bg-black/30 p-1 w-fit">
                 <button
+                  data-testid="mode-single"
                   onClick={() => setMode("single")}
                   className={cn(
                     "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
@@ -197,6 +198,7 @@ export default function StudioPage() {
                   Single
                 </button>
                 <button
+                  data-testid="mode-campaign"
                   onClick={() => setMode("campaign")}
                   className={cn(
                     "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
@@ -226,6 +228,7 @@ export default function StudioPage() {
                     className="space-y-3"
                   >
                     <Textarea
+                      data-testid="prompt-input"
                       value={prompt}
                       onChange={(e) => setPrompt(e.target.value)}
                       onKeyDown={(e) => {
@@ -241,6 +244,7 @@ export default function StudioPage() {
                     <div className="flex items-center gap-2">
                       <ModalitySelect value={modality} onChange={setModality} />
                       <Button
+                        data-testid="generate-button"
                         onClick={() => generate()}
                         disabled={busy || !prompt.trim()}
                         className="ml-auto h-9 rounded-full px-5 text-sm font-semibold gap-1.5"
@@ -485,6 +489,8 @@ function GalleryCard({
 }) {
   return (
     <motion.button
+      data-testid="gallery-card"
+      data-campaign={run.campaign_id ? "true" : "false"}
       onClick={onSelect}
       whileHover={{ scale: 1.015 }}
       whileTap={{ scale: 0.985 }}
@@ -513,7 +519,10 @@ function GalleryCard({
           </span>
         )}
         {run.campaign_id && (
-          <span className="rounded-full bg-ok px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-black">
+          <span
+            data-testid="campaign-tag"
+            className="rounded-full bg-ok px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-black"
+          >
             Campaign
           </span>
         )}
@@ -632,7 +641,7 @@ function ProvenanceModal({
   }, [run.manifest_key]);
 
   return (
-    <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden rounded-3xl">
+    <DialogContent data-testid="provenance-modal" className="sm:max-w-lg p-0 gap-0 overflow-hidden rounded-3xl">
       {url && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={url} alt="" className="w-full max-h-72 object-cover" />
@@ -720,6 +729,7 @@ function ProvenanceModal({
 
         <div className="flex gap-2">
           <Button
+            data-testid="regenerate-button"
             onClick={onRegenerate}
             disabled={busy}
             variant="outline"
@@ -731,6 +741,7 @@ function ProvenanceModal({
             Regenerate (linked)
           </Button>
           <Button
+            data-testid="manifest-toggle"
             onClick={() => setShowJson((s) => !s)}
             variant="outline"
             className="rounded-full text-xs border-line/60"

@@ -31,6 +31,10 @@ class Settings:
     presign_expiry: int = int(os.getenv("PRESIGN_EXPIRY_SECONDS", "3600"))
     # "auto" = real providers when keys exist; "mock" = force mock (dev/no credits)
     provider_mode: str = os.getenv("VERITAS_PROVIDER", "auto")
+    # Comma-separated extra allowed CORS origins (e.g. the deployed Vercel URL)
+    cors_origins: list[str] = [
+        o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()
+    ]
 
     @property
     def has_gmi(self) -> bool:

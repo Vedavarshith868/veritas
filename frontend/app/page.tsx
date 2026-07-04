@@ -490,6 +490,7 @@ function GalleryCard({
   return (
     <motion.button
       data-testid="gallery-card"
+      data-run-id={run.run_id}
       data-campaign={run.campaign_id ? "true" : "false"}
       onClick={onSelect}
       whileHover={{ scale: 1.015 }}

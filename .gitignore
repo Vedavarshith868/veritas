@@ -28,3 +28,6 @@ nvidia-image-*.png
 
 # Internal planning doc — not for the public repo
 /VIDEO_SCRIPT.md
+
+# Demo-video automation tooling + generated media — local only
+/video-automation/

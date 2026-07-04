@@ -25,3 +25,6 @@ nvidia-image-*.png
 
 # Local Claude Code config
 .claude/
+
+# Internal planning doc — not for the public repo
+/VIDEO_SCRIPT.md

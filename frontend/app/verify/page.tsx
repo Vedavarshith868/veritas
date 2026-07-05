@@ -19,18 +19,21 @@ export default function VerifyPage() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<VerifyResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  const check = useCallback(async (file: File) => {
+  const check = useCallback((file: File) => {
+    setPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
+    });
     setBusy(true);
     setError(null);
     setResult(null);
-    try {
-      setResult(await api.verifyFile(file));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
+    api
+      .verifyFile(file)
+      .then(setResult)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setBusy(false));
   }, []);
 
   return (
@@ -78,20 +81,35 @@ export default function VerifyPage() {
             e.currentTarget.value = "";
           }}
         />
-        <motion.div
-          animate={busy ? { rotate: 360 } : { y: [0, -4, 0] }}
-          transition={
-            busy
-              ? { repeat: Infinity, duration: 1, ease: "linear" }
-              : { repeat: Infinity, duration: 2.5, ease: "easeInOut" }
-          }
-        >
-          {busy ? (
-            <Loader2 className="h-8 w-8 text-accent" />
-          ) : (
-            <UploadCloud className="h-8 w-8 text-muted-foreground/40" />
-          )}
-        </motion.div>
+        {previewUrl ? (
+          <motion.img
+            key={previewUrl}
+            src={previewUrl}
+            alt="Selected file preview"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.25 }}
+            className={cn(
+              "h-24 w-24 rounded-2xl border border-line/60 object-cover shadow-lg",
+              busy && "animate-pulse",
+            )}
+          />
+        ) : (
+          <motion.div
+            animate={busy ? { rotate: 360 } : { y: [0, -4, 0] }}
+            transition={
+              busy
+                ? { repeat: Infinity, duration: 1, ease: "linear" }
+                : { repeat: Infinity, duration: 2.5, ease: "easeInOut" }
+            }
+          >
+            {busy ? (
+              <Loader2 className="h-8 w-8 text-accent" />
+            ) : (
+              <UploadCloud className="h-8 w-8 text-muted-foreground/40" />
+            )}
+          </motion.div>
+        )}
         <div>
           <span className="text-sm font-medium block">
             {busy

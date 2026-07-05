@@ -163,7 +163,11 @@ export default function StudioPage() {
         <div className="absolute inset-0 bg-grid-fade" />
         <div className="relative grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-14 items-center">
           {/* LEFT — functional generate console styled as product mockup */}
-          <div className="rounded-[1.75rem] border border-line bg-surface p-2 shadow-2xl shadow-black/50">
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="rounded-[1.75rem] border border-line bg-surface p-2 shadow-2xl shadow-black/50">
             <div className="rounded-[1.4rem] bg-surface-2/70 p-5 space-y-4">
               <div className="flex items-center gap-2.5">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-accent-ink">
@@ -328,10 +332,14 @@ export default function StudioPage() {
                 )}
               </AnimatePresence>
             </div>
-          </div>
+          </motion.div>
 
           {/* RIGHT — bold headline */}
-          <div>
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.15, ease: "easeOut" }}
+          >
             <div className="inline-flex items-center gap-1.5 rounded-full bg-white/5 px-3 py-1 text-[11px] font-medium text-accent mb-6">
               <Sparkles className="h-3 w-3" />
               Generate once. Prove it forever.
@@ -352,7 +360,7 @@ export default function StudioPage() {
               <StatPill label="Verified" value={verifiedCount} color="text-ok" />
               <StatPill label="Campaigns" value={campaignCount} />
             </div>
-          </div>
+          </motion.div>
         </div>
       </section>
 

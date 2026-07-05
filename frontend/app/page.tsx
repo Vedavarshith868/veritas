@@ -465,7 +465,14 @@ function SystemOfRecordSection({ stats }: { stats: Stats }) {
     {
       label: "Verify-index (O(1))",
       value: stats.verify_index_entries.toLocaleString(),
-      hint: "sha-256 → run lookup objects",
+      hint: "sha-256 → run lookup",
+    },
+    {
+      label: "Secondary indexes",
+      value: (
+        stats.provider_index_entries + stats.campaign_index_entries
+      ).toLocaleString(),
+      hint: "by-provider · by-campaign",
     },
     {
       label: "WORM-locked copies",
@@ -496,7 +503,7 @@ function SystemOfRecordSection({ stats }: { stats: Stats }) {
           </p>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {cards.map((c) => (
           <div
             key={c.label}

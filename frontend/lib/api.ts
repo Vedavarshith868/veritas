@@ -65,6 +65,8 @@ export type Stats = {
   assets: number;
   asset_bytes: number;
   verify_index_entries: number;
+  provider_index_entries: number;
+  campaign_index_entries: number;
   locked_manifests: number;
   multi_step_runs: number;
   with_captions: number;

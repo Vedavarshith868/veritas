@@ -32,6 +32,18 @@ def index_key(sha256: str) -> str:
     return f"{get_settings().prefix}/index/sha256/{sha256.lower()}.json"
 
 
+def provider_index_key(provider: str, run_id: str) -> str:
+    """Secondary index: 'runs by provider X' as an O(list) prefix scan
+    of one shallow B2 pseudo-directory."""
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in provider or "unknown")
+    return f"{get_settings().prefix}/index/by-provider/{safe}/{run_id}.json"
+
+
+def campaign_index_key(campaign_id: str, run_id: str) -> str:
+    """Secondary index: 'runs in campaign X' as an O(list) prefix scan."""
+    return f"{get_settings().prefix}/index/by-campaign/{campaign_id}/{run_id}.json"
+
+
 def write_verify_index(gr: "GenerationResult") -> str | None:
     """Persist the O(1) verify-index object for a completed generation."""
     if not gr.sha256:
@@ -75,6 +87,76 @@ def lookup(sha256: str) -> dict[str, Any] | None:
     except Exception:
         logger.warning("corrupt index object for %s", sha256, exc_info=True)
         return None
+
+
+def write_secondary_indexes(gr: "GenerationResult") -> None:
+    """Write pointer objects to the secondary indexes (by-provider and,
+    if applicable, by-campaign). Small footprint per run — enables O(1)
+    prefix listing when the UI or an integrator asks 'show me every run
+    on provider X' or 'every variant in campaign C'."""
+    body = {
+        "run_id": gr.run_id,
+        "manifest_key": gr.manifest_key,
+        "asset_key": gr.asset_key,
+        "sha256": (gr.sha256 or "").lower() or None,
+        "provider": gr.provider,
+        "model": gr.model,
+        "campaign_id": _campaign_id_from_manifest(gr.manifest),
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    backend = get_backend()
+    payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+
+    if gr.provider and gr.run_id:
+        pk = provider_index_key(gr.provider, gr.run_id)
+        try:
+            backend.put(pk, payload, content_type="application/json")
+        except Exception:
+            logger.warning("provider-index write failed for %s", pk, exc_info=True)
+
+    campaign_id = body["campaign_id"]
+    if campaign_id and gr.run_id:
+        ck = campaign_index_key(campaign_id, gr.run_id)
+        try:
+            backend.put(ck, payload, content_type="application/json")
+        except Exception:
+            logger.warning("campaign-index write failed for %s", ck, exc_info=True)
+
+
+def _campaign_id_from_manifest(manifest: dict[str, Any] | None) -> str | None:
+    if not manifest:
+        return None
+    run = manifest.get("run") if isinstance(manifest, dict) else None
+    if isinstance(run, dict):
+        return run.get("project_id")
+    return None
+
+
+def list_by_provider(provider: str, limit: int = 200) -> list[dict[str, Any]]:
+    """List index entries under by-provider/<provider>/. Follows pagination."""
+    from .storage import list_entries, read_json
+
+    prefix = f"{get_settings().prefix}/index/by-provider/{provider}/"
+    out: list[dict[str, Any]] = []
+    for entry in list_entries(prefix, max_total=limit):
+        try:
+            out.append(read_json(entry.key))
+        except Exception:
+            continue
+    return out
+
+
+def list_by_campaign(campaign_id: str, limit: int = 200) -> list[dict[str, Any]]:
+    from .storage import list_entries, read_json
+
+    prefix = f"{get_settings().prefix}/index/by-campaign/{campaign_id}/"
+    out: list[dict[str, Any]] = []
+    for entry in list_entries(prefix, max_total=limit):
+        try:
+            out.append(read_json(entry.key))
+        except Exception:
+            continue
+    return out
 
 
 def stamp_asset_metadata(gr: "GenerationResult") -> bool:

@@ -25,6 +25,8 @@ class BucketStats:
     assets: int               # count of generated media assets
     asset_bytes: int          # total bytes of all generated media
     verify_index_entries: int # count of sha256 → run lookup objects
+    provider_index_entries: int # secondary index: 'by-provider' pointer count
+    campaign_index_entries: int # secondary index: 'by-campaign' pointer count
     locked_manifests: int     # WORM-copy count in the Object-Lock bucket
     multi_step_runs: int      # generations where step 1 (caption) exists
     with_captions: int        # multi-step runs that produced usable caption text
@@ -64,6 +66,13 @@ def _fresh_stats() -> BucketStats:
     for _ in list_entries(f"{prefix}/index/sha256/"):
         verify_index_entries += 1
 
+    provider_index_entries = sum(
+        1 for _ in list_entries(f"{prefix}/index/by-provider/")
+    )
+    campaign_index_entries = sum(
+        1 for _ in list_entries(f"{prefix}/index/by-campaign/")
+    )
+
     locked_manifests = 0
     if compliance.enabled():
         try:
@@ -94,6 +103,8 @@ def _fresh_stats() -> BucketStats:
         assets=assets,
         asset_bytes=asset_bytes,
         verify_index_entries=verify_index_entries,
+        provider_index_entries=provider_index_entries,
+        campaign_index_entries=campaign_index_entries,
         locked_manifests=locked_manifests,
         multi_step_runs=multi_step,
         with_captions=captioned,

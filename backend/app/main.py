@@ -140,6 +140,36 @@ def get_stats(refresh: bool = Query(default=False)) -> dict:
     return stats.get_stats(force_refresh=refresh)
 
 
+@app.get("/api/runs/by-provider")
+def runs_by_provider(
+    provider: str = Query(..., min_length=1, max_length=64),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    """O(list) prefix scan against the secondary by-provider index.
+
+    Instead of scanning every manifest to find runs by provider X, we
+    list a shallow B2 pseudo-directory — proves the "queryable straight
+    from B2" story is real for more than one query shape.
+    """
+    from . import indexer
+
+    return {"provider": provider, "runs": indexer.list_by_provider(provider, limit=limit)}
+
+
+@app.get("/api/runs/by-campaign")
+def runs_by_campaign(
+    campaign_id: str = Query(..., min_length=1, max_length=64),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict:
+    """O(list) prefix scan against the secondary by-campaign index."""
+    from . import indexer
+
+    return {
+        "campaign_id": campaign_id,
+        "runs": indexer.list_by_campaign(campaign_id, limit=limit),
+    }
+
+
 @app.get("/api/certificate")
 def certificate(
     key: str = Query(..., description="B2 manifest key for the run"),

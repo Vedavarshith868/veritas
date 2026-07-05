@@ -353,11 +353,13 @@ def _finalize_result(
         caption_model=caption_model,
     )
 
-    # B2 hardening (best-effort): O(1) verify index + self-describing asset
+    # B2 hardening (best-effort): O(1) verify index + secondary indexes
+    # for by-provider / by-campaign filtering + self-describing asset
     # metadata + WORM compliance copy. Failures degrade gracefully.
     from . import compliance, indexer
 
     indexer.write_verify_index(gr)
+    indexer.write_secondary_indexes(gr)
     indexer.stamp_asset_metadata(gr)
     if manifest_dict:
         locked_key = compliance.write_locked_manifest(gr.run_id, manifest_dict)

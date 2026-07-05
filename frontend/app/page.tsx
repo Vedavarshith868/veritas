@@ -17,7 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, type RunSummary } from "@/lib/api";
+import { api, type RunSummary, type Stats } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -65,10 +65,14 @@ export default function StudioPage() {
   const [urls, setUrls] = useState<UrlCache>({});
   const [selected, setSelected] = useState<RunSummary | null>(null);
   const [providerMode, setProviderMode] = useState<string>("...");
+  const [stats, setStats] = useState<Stats | null>(null);
 
   const refresh = useCallback(async () => {
     const { runs } = await api.runs();
     setRuns(runs);
+    // Refresh live B2 stats alongside the gallery — the numbers-are-real
+    // system-of-record panel updates as new manifests land.
+    api.stats().then(setStats).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -400,6 +404,9 @@ export default function StudioPage() {
         )}
       </section>
 
+      {/* B2 System of Record — proves live metrics come straight from B2, no separate DB */}
+      {stats && <SystemOfRecordSection stats={stats} />}
+
       {/* Provenance modal */}
       <Dialog
         open={selected !== null}
@@ -430,6 +437,93 @@ function MetaPill({ children }: { children: React.ReactNode }) {
     <span className="rounded-full bg-white/5 border border-white/5 px-2.5 py-1 text-[10.5px] font-medium text-muted-foreground/70">
       {children}
     </span>
+  );
+}
+
+function SystemOfRecordSection({ stats }: { stats: Stats }) {
+  const mb = stats.asset_bytes / (1024 * 1024);
+  const sizeLabel =
+    mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(stats.asset_bytes / 1024)} KB`;
+
+  const cards: Array<{
+    label: string;
+    value: string;
+    hint: string;
+    accent?: boolean;
+  }> = [
+    {
+      label: "Provenance manifests",
+      value: stats.generations.toLocaleString(),
+      hint: "one per generation attempt",
+    },
+    {
+      label: "Media assets",
+      value: stats.assets.toLocaleString(),
+      hint: sizeLabel + " stored on B2",
+    },
+    {
+      label: "Verify-index (O(1))",
+      value: stats.verify_index_entries.toLocaleString(),
+      hint: "sha-256 → run lookup objects",
+    },
+    {
+      label: "WORM-locked copies",
+      value: stats.locked_manifests.toLocaleString(),
+      hint: "compliance-mode Object Lock",
+    },
+    {
+      label: "Multi-step runs",
+      value: stats.multi_step_runs.toLocaleString(),
+      hint: `${stats.with_captions.toLocaleString()} with AI captions`,
+      accent: true,
+    },
+  ];
+
+  return (
+    <section>
+      <div className="flex items-end justify-between mb-5">
+        <div>
+          <div className="text-[11px] uppercase tracking-wider text-muted-foreground/60">
+            System of record
+          </div>
+          <h2 className="text-lg font-bold tracking-tight mt-0.5">
+            Everything you see lives on Backblaze B2.
+          </h2>
+          <p className="text-xs text-muted-foreground/60 mt-1 max-w-md">
+            No separate database — runs, manifests, lineage, verify-index, and
+            WORM copies are all queried live from B2 objects on every request.
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        {cards.map((c) => (
+          <div
+            key={c.label}
+            className={cn(
+              "rounded-2xl border p-4",
+              c.accent
+                ? "border-accent/25 bg-accent-soft"
+                : "border-line/60 bg-surface",
+            )}
+          >
+            <div
+              className={cn(
+                "text-[10px] uppercase tracking-wider mb-2 font-medium",
+                c.accent ? "text-accent" : "text-muted-foreground/60",
+              )}
+            >
+              {c.label}
+            </div>
+            <div className="text-2xl font-black tabular-nums leading-none">
+              {c.value}
+            </div>
+            <div className="text-[11px] text-muted-foreground/60 mt-2">
+              {c.hint}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 

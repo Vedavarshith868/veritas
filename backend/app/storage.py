@@ -51,13 +51,20 @@ def presigned_url(key: str, expires_in: int | None = None) -> str:
 
 def list_keys(prefix: str, *, max_total: int = 5000) -> list[str]:
     """List object keys under a prefix, following pagination."""
+    return [e.key for e in list_entries(prefix, max_total=max_total)]
+
+
+def list_entries(prefix: str, *, max_total: int = 5000) -> list:
+    """List full FileEntry records (key + size + last_modified etc.) under
+    a prefix. Follows pagination. Used by /api/stats to compute live B2
+    metrics without a second round-trip per object."""
     backend = get_backend()
-    out: list[str] = []
+    out: list = []
     token: str | None = None
     while True:
         page = backend.list(prefix, continuation_token=token) if token else backend.list(prefix)
         for entry in page.entries:
-            out.append(entry.key if hasattr(entry, "key") else str(entry))
+            out.append(entry)
         token = getattr(page, "next_token", None)
         if not token or len(out) >= max_total:
             break

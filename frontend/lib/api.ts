@@ -60,6 +60,17 @@ export type Health = {
   provider_mode: string;
 };
 
+export type Stats = {
+  generations: number;
+  assets: number;
+  asset_bytes: number;
+  verify_index_entries: number;
+  locked_manifests: number;
+  multi_step_runs: number;
+  with_captions: number;
+  last_generation_iso: string | null;
+};
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let detail = res.statusText;
@@ -76,6 +87,8 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 
 export const api = {
   health: () => fetch("/api/health").then((r) => jsonOrThrow<Health>(r)),
+
+  stats: () => fetch("/api/stats").then((r) => jsonOrThrow<Stats>(r)),
 
   generate: (prompt: string, modality: string, parentRunId?: string) =>
     fetch("/api/generate", {

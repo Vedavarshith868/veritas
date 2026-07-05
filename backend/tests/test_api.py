@@ -55,6 +55,7 @@ def test_openapi_docs_available() -> None:
         "/api/generate",
         "/api/campaign",
         "/api/runs",
+        "/api/stats",
         "/api/verify",
         "/api/verify-hash",
     ]:

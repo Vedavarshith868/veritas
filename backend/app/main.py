@@ -21,7 +21,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from . import catalog
+from . import catalog, stats
 from .config import get_settings
 from .pipeline import generate_campaign, generate_media
 from .storage import presigned_url
@@ -124,6 +124,17 @@ def runs(
     include_failed: bool = Query(default=False),
 ) -> dict:
     return {"runs": catalog.list_runs(limit=limit, include_failed=include_failed)}
+
+
+@app.get("/api/stats")
+def get_stats(refresh: bool = Query(default=False)) -> dict:
+    """Live B2 metrics — proves B2 is the entire system of record.
+
+    Every counter is computed by listing B2 objects directly (no separate
+    database, no cached metrics store). Result is cached for STATS_CACHE_TTL
+    seconds (default 45s) so /api/stats doesn't hammer B2 on hot reload.
+    """
+    return stats.get_stats(force_refresh=refresh)
 
 
 @app.get("/api/manifest")

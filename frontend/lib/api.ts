@@ -123,6 +123,14 @@ export const api = {
       jsonOrThrow<Record<string, unknown>>(r),
     ),
 
+  certificate: (key: string) =>
+    fetch(`/api/certificate?key=${encodeURIComponent(key)}`).then((r) =>
+      jsonOrThrow<Record<string, unknown>>(r),
+    ),
+
+  certificateDownloadUrl: (key: string) =>
+    `/api/certificate?key=${encodeURIComponent(key)}&download=true`,
+
   verifyFile: (file: File) => {
     const fd = new FormData();
     fd.append("file", file);

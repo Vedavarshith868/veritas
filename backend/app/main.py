@@ -21,7 +21,9 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from . import catalog, stats
+from fastapi.responses import JSONResponse
+
+from . import catalog, certificate as cert, stats
 from .config import get_settings
 from .pipeline import generate_campaign, generate_media
 from .storage import presigned_url
@@ -136,6 +138,32 @@ def get_stats(refresh: bool = Query(default=False)) -> dict:
     seconds (default 45s) so /api/stats doesn't hammer B2 on hot reload.
     """
     return stats.get_stats(force_refresh=refresh)
+
+
+@app.get("/api/certificate")
+def certificate(
+    key: str = Query(..., description="B2 manifest key for the run"),
+    download: bool = Query(default=False),
+):
+    """Downloadable provenance certificate for one run.
+
+    JSON body bundles the Genblaze manifest, B2 storage coordinates, WORM
+    lock details when available, and a self-checksum over the certificate
+    itself. Pass ?download=true to trigger a browser download instead of
+    rendering the JSON inline.
+    """
+    try:
+        payload = cert.build_certificate(key)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=404, detail=f"certificate unavailable: {exc}"
+        ) from exc
+    headers: dict[str, str] = {}
+    if download:
+        run_id = ((payload.get("run") or {}).get("run_id") or "unknown")[:12]
+        filename = f"veritas-certificate-{run_id}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return JSONResponse(content=payload, headers=headers)
 
 
 @app.get("/api/manifest")

@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   GitBranch,
   FileJson2,
+  FileDown,
   RefreshCw,
   Loader2,
   Sparkles,
@@ -845,7 +846,7 @@ function ProvenanceModal({
 
         <Separator className="bg-line/50" />
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             data-testid="regenerate-button"
             onClick={onRegenerate}
@@ -866,6 +867,21 @@ function ProvenanceModal({
           >
             <FileJson2 className="h-3 w-3" />
             {showJson ? "Hide" : "Manifest"}
+          </Button>
+          <Button
+            render={
+              <a
+                href={`/certificate?key=${encodeURIComponent(run.manifest_key)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              />
+            }
+            nativeButton={false}
+            variant="outline"
+            className="rounded-full text-xs border-line/60"
+          >
+            <FileDown className="h-3 w-3" />
+            Certificate
           </Button>
         </div>
 

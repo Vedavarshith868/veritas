@@ -55,6 +55,12 @@ export default function RootLayout({
                 >
                   Verify
                 </Link>
+                <Link
+                  href="/embed"
+                  className="rounded-full px-3.5 py-1.5 text-foreground/70 hover:bg-white/5 hover:text-foreground transition-colors"
+                >
+                  Embed
+                </Link>
               </nav>
               <div className="ml-auto flex items-center gap-2">
                 <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] font-medium text-muted-foreground">

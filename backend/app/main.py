@@ -38,13 +38,14 @@ app = FastAPI(title="Veritas API", version="0.1.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Wildcard CORS is deliberate here: the "Verified by Veritas" badge is
+# designed to be embedded on any third-party website, and it fetches
+# /api/verify-hash cross-origin. Per-IP rate limiting caps abuse — the
+# expensive endpoints (generate, campaign) allow only single-digit
+# requests per hour per IP no matter where the call originates from.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        *get_settings().cors_origins,
-    ],
+    allow_origins=["*", *get_settings().cors_origins],
     allow_methods=["*"],
     allow_headers=["*"],
 )

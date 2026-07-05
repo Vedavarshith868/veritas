@@ -268,8 +268,8 @@ def _extract_text_output(step: Any) -> str | None:
             # if only a data: URL exists, unwrap it.
             if val.startswith("data:") and "," in val:
                 import base64
-                _, _, payload = val.partition(",")
-                if ";base64" in _:
+                header, _, payload = val.partition(",")
+                if ";base64" in header:
                     try:
                         return base64.b64decode(payload).decode("utf-8")
                     except Exception:

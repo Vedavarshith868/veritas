@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        working-directory: backend
+        env:
+          # Fake B2 config so config.get_settings() imports cleanly. Real
+          # credentials are never in CI; unit tests mock any storage calls.
+          B2_KEY_ID: ci-test-key-id
+          B2_APP_KEY: ci-test-app-key
+          B2_BUCKET: ci-test-bucket
+          B2_REGION: us-east-005
+          B2_ENDPOINT: https://s3.us-east-005.backblazeb2.com
+          VERITAS_PROVIDER: mock
+        run: pytest tests/ -v
+
+  frontend:
+    name: Frontend build + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Type-check
+        working-directory: frontend
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: frontend
+        env:
+          BACKEND_URL: https://veritas-backend-9iwa.onrender.com
+        run: npx next build

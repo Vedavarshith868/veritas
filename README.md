@@ -1,82 +1,140 @@
 # Veritas — provenance-first generative media studio
 
-**Live app:** https://veritas-one-alpha.vercel.app
-**Backend API:** https://veritas-backend-9iwa.onrender.com/api/health
+**Live app:** https://veritas-one-alpha.vercel.app · **Backend:** https://veritas-backend-9iwa.onrender.com/api/health · **CI:** ![CI](https://github.com/Vedavarshith868/veritas/actions/workflows/ci.yml/badge.svg)
+
+Every AI-generated image ships with a **cryptographically verifiable provenance
+manifest** stored on **Backblaze B2** — bound to the exact image bytes it
+describes. Anyone can drop any file into the public `/verify` page and get an
+instant O(1) answer: was this generated through Veritas, and if so, by what
+model, from what prompt, on what date. Modify a single bit and the match
+breaks.
 
 Built for the **Backblaze Generative Media Hackathon** (Genblaze + B2).
 
-Every AI-generated image/video/audio asset is uploaded to **Backblaze B2** with a
-**cryptographically verifiable provenance manifest** (via Genblaze). A public
-**verify** endpoint lets anyone drop in a file and confirm whether it's an
-authentic, provenance-tracked asset — and see exactly how it was made.
+> **Note on the free-tier backend:** Render's free tier spins the API down
+> after 15 min idle. The first request after a nap can take 30-60s to wake
+> the container. Subsequent requests are fast.
 
-## Why this wins
-Maps to all four (equally weighted) judging criteria:
-- **Real-world utility** — brands/newsrooms need verifiable AI-content authenticity.
-- **Production readiness** — private bucket + presigned serving, encryption at rest, error handling.
-- **B2 storage + orchestration** — B2 is the system of record for assets *and* manifests (no separate DB).
-- **Genblaze usage** — multi-provider pipeline + built-in provenance manifests (the SDK's signature feature).
+---
+
+## The four judging criteria — how each is answered
+
+### 1 · Real-world utility
+- **Public `/verify` needs no login.** Anyone hosting an AI-generated asset can point their audience at it.
+- **Embeddable "Verified by Veritas" badge widget** ([`/embed`](https://veritas-one-alpha.vercel.app/embed)) — a 4KB Shadow-DOM'd script third-party sites drop next to any AI image; one HTTPS request, live check. Turns Veritas from a standalone tool into infrastructure.
+- **Downloadable provenance certificate** — printable one-page HTML per asset (or raw JSON), for legal / editorial / compliance workflows.
+- **Iteration lineage** (`parent_run_id`) — regenerate any asset and the new version links back to the one it came from. Editorial revision history is auditable, not just latest state.
+- **Campaigns** — one brief → 2-12 provable variants, each with its own manifest, grouped under a shared `campaign_id`.
+
+### 2 · Production readiness
+- **Deployed live**, not localhost-only. Frontend on Vercel (auto-deploy on push), backend on Render from a `render.yaml` Blueprint.
+- **Per-IP rate limiting** (`slowapi`) on paid endpoints — `/api/generate` 10/hr, `/api/campaign` 3/hr, `/api/verify*` 60/hr. Configurable via env vars.
+- **Adversarial retry policy** — `RetryPolicy.aggressive()` on NVIDIA providers so transient 500s / timeouts from their free-tier endpoint don't sink a real user's request.
+- **CI on every push** — 28-test pytest suite + `tsc --noEmit` + `next build`. Real bugs caught by tests during development (see the git history).
+- **Adversarially tested WORM** — the compliance-mode Object Lock claim was verified by attempting an explicit-version `DeleteObject` on a real locked manifest: `AccessDenied`. Not a claim, a passed adversarial check.
+- **Credentials** — keys were rotated before the repo went public; `.env` is git-ignored; B2 keys are bucket-scoped, not the master key; CORS is deliberate wildcard (badge use case) but every write endpoint is rate-limited.
+
+### 3 · B2 storage + orchestration
+**Zero separate database.** B2 objects *are* the entire system of record — every counter on the deployed [`/api/stats`](https://veritas-backend-9iwa.onrender.com/api/stats) endpoint is computed by listing B2 objects live:
+
+```
+veritas/runs/<date>/<run_id>/manifest.json           # Genblaze provenance record
+veritas/runs/<date>/<run_id>/assets/<asset_id>.<ext> # the media
+veritas/index/sha256/<hash>.json                     # O(1) verify lookup
+veritas/index/by-provider/<provider>/<run_id>.json   # secondary index
+veritas/index/by-campaign/<campaign_id>/<run_id>.json# secondary index
+```
+
+Plus a **second bucket with Object Lock enabled** (`veritas-genmedia-locked`) that holds WORM copies of every manifest in COMPLIANCE mode — undeletable even by the account owner until the retention window expires.
+
+Additional B2-native touches:
+- **Server-side asset metadata stamping** via S3 `copy_object` with `MetadataDirective=REPLACE` — provider/model/run-id/sha256 attached as B2 object metadata headers, zero bandwidth, readable by any S3 tool.
+- **Presigned URLs only** — the bucket is private; the frontend serves every image through a time-limited presigned GET.
+- **Live queryable-B2 endpoints** — `/api/runs/by-provider?provider=...` and `/api/runs/by-campaign?campaign_id=...` do O(list) prefix scans against the secondary indexes instead of manifest full-scans.
+
+### 4 · Use of Genblaze
+- **Multi-step pipeline** — every image generation is a chained `Pipeline.step(image_provider).step(chat_provider, input_from=0)` — flux.1-dev produces the image, `meta/llama-3.2-11b-vision-instruct` captions it, and **both steps are signed into the same manifest** so the AI-generated description is cryptographically bound to the exact image bytes.
+- **Real fallback chains** on every real-provider path (`fallback_models=[...]`) — GMI image: seedream-4-0 → seedream-3-0; GMI video: pixverse-v5.6-t2v → wan2.6-r2v; NVIDIA vision: llama-3.2-11b → 90b.
+- **Real batch orchestration** for campaigns — `Pipeline.batch_run(prompts=[...], max_concurrency=3, fail_fast=False)`. Not a for-loop wearing a batch costume; genuine concurrent Genblaze runs with per-variant failure isolation.
+- **Manifest.verify() is the source of truth** — the "verified" badge in the UI reflects a passed cryptographic check that runs *inside* the pipeline, not a status flag we set ourselves.
+- **Genblaze's own lineage primitives** — `parent_run_id` (iterations) and `project_id` (campaigns) are used natively, not shadowed by a custom system.
+
+### Provider auto-routing
+The pipeline auto-selects the provider per modality. Set the corresponding key
+and the path activates:
+
+| Modality | Live path (this deploy)     | Auto-fallbacks (activate on key)                 |
+|----------|-----------------------------|--------------------------------------------------|
+| Image    | NVIDIA `flux.1-dev`         | GMI Cloud `seedream-4-0` → `seedream-3-0`        |
+| Video    | (none — image demo)         | GMI Cloud `pixverse-v5.6-t2v` → `wan2.6-r2v`     |
+| Audio    | (none — image demo)         | ElevenLabs `eleven_flash_v2_5` → `turbo_v2_5`    |
+
+`VERITAS_PROVIDER=mock` in `.env` short-circuits to a local placeholder that runs the full B2 + manifest loop with zero API cost — used for demos and CI.
+
+---
 
 ## Stack
-- **Backend:** Python 3.12, FastAPI, Genblaze (`genblaze[all]`), Backblaze B2 (S3-compatible).
-- **Frontend:** Next.js (planned).
+
+- **Backend:** Python 3.12 · FastAPI · Genblaze `0.4.1` (`genblaze[all]` + provider plugins) · boto3 (S3-compatible B2) · slowapi (rate limiting) · pytest.
+- **Frontend:** Next.js 16 · React 19 · TypeScript · Tailwind CSS · shadcn/ui (base-ui) · Framer Motion.
+- **Deploy:** Vercel (frontend, auto) · Render (backend from `render.yaml`).
+- **CI:** GitHub Actions — pytest + typecheck + build on every push.
 
 ## Setup
+
 ```bash
 # 1. Python 3.12 venv
-py -3.12 -m venv backend/.venv           # or the full interpreter path
+py -3.12 -m venv backend/.venv
 backend/.venv/Scripts/python -m pip install -r backend/requirements.txt
 
 # 2. Configure secrets
-cp backend/.env.example backend/.env     # then fill in B2 keys (+ GMI_API_KEY when available)
+cp backend/.env.example backend/.env    # then fill in B2 keys + NVIDIA_API_KEY
 
-# 3. Validate B2 connectivity
-PYTHONUTF8=1 backend/.venv/Scripts/python backend/scripts/smoke_b2.py
+# 3. Validate B2 + Genblaze end-to-end
+backend/.venv/Scripts/python backend/scripts/smoke_b2.py
+backend/.venv/Scripts/python backend/scripts/smoke_pipeline.py
 
-# 4. Prove the full provenance loop (generate -> B2 -> manifest -> verify)
-PYTHONUTF8=1 backend/.venv/Scripts/python backend/scripts/smoke_pipeline.py
+# 4. Run the backend
+cd backend && .venv/Scripts/python -m uvicorn app.main:app --port 8000
 
-# 5. Run the API (backend)
-cd backend && PYTHONUTF8=1 .venv/Scripts/python -m uvicorn app.main:app --port 8000
-
-# 6. Run the studio (frontend, in another terminal)
+# 5. Run the studio (another terminal)
 cd frontend && npm install && npm run dev   # http://localhost:3000
+
+# 6. Run the tests
+backend/.venv/Scripts/python -m pytest backend/tests -v
 ```
 
-The frontend proxies `/api/*` to the backend. Override the target with
-`BACKEND_URL` (e.g. in `frontend/.env.local`) if the backend isn't on `:8000`.
+The frontend proxies `/api/*` to the backend; override the target with
+`BACKEND_URL` in `frontend/.env.local` if the backend isn't on `:8000`.
 
-## Provider modes
-- **mock** (default) — renders a real local PNG and runs the full B2 + manifest
-  loop with zero API cost. Active whenever `GMI_API_KEY` is unset.
-- **gmi** — real GMICloud generation once `GMI_API_KEY` is set in `.env`.
+## API surface
 
-## API
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/health` | liveness + config |
-| POST | `/api/generate` | run the provenance pipeline |
-| GET | `/api/runs` | list recent runs (from B2 manifests) |
-| GET | `/api/manifest?key=` | full provenance manifest |
-| GET | `/api/asset-url?key=` | presigned GET URL for a private asset |
-| POST | `/api/verify` | upload a file → is it authentic? |
-| POST | `/api/verify-hash` | check a sha256 against known provenance |
-
-## B2 layout
-```
-veritas/runs/<date>/<run_id>/manifest.json          # provenance record
-veritas/runs/<date>/<run_id>/assets/<asset_id>.<ext> # the media
-```
+| Method  | Path                              | Purpose                                                        |
+|---------|-----------------------------------|----------------------------------------------------------------|
+| GET     | `/api/health`                     | Liveness + active provider mode                                |
+| POST    | `/api/generate`                   | Run the provenance pipeline (rate-limited 10/hr per IP)        |
+| POST    | `/api/campaign`                   | Fan out N provable variants (rate-limited 3/hr per IP)         |
+| GET     | `/api/runs`                       | List recent generations from B2 manifests                      |
+| GET     | `/api/runs/by-provider?provider=` | O(list) prefix scan via secondary index                        |
+| GET     | `/api/runs/by-campaign?campaign_id=` | O(list) prefix scan via secondary index                     |
+| GET     | `/api/stats`                      | Live B2 metrics (no separate DB, no cache store)               |
+| GET     | `/api/manifest?key=`              | Fetch a full provenance manifest                               |
+| GET     | `/api/asset-url?key=`             | Presigned GET URL for a private asset                          |
+| GET     | `/api/certificate?key=`           | Signed provenance certificate JSON (`?download=true` for save) |
+| POST    | `/api/verify`                     | Upload a file → is it authentic? (rate-limited 60/hr per IP)   |
+| POST    | `/api/verify-hash`                | Check a sha256 against known provenance                        |
+| GET     | `/docs`                           | Auto-generated OpenAPI docs                                    |
 
 ## Deployment
-- **Frontend:** Vercel (`frontend/`), auto-builds on push.
-- **Backend:** Render, provisioned from `render.yaml` (Blueprint). Secrets are set
-  directly in the Render dashboard, never committed.
-- `BACKEND_URL` (Vercel env var) points the frontend's `/api/*` rewrite at the
-  Render backend. `CORS_ORIGINS` (Render env var) locks the backend's CORS to
-  the deployed frontend origin.
 
-## Security notes
-- `backend/.env` is git-ignored; never commit real keys.
-- The B2 application keys are scoped to a single bucket each (not the master key).
-- All keys (B2, NVIDIA) were rotated immediately before this repo went public.
+- **Frontend:** Vercel — `BACKEND_URL` env var points `/api/*` at the Render backend.
+- **Backend:** Render Blueprint from `render.yaml`. Secrets injected via the Render dashboard, never committed.
+- **CORS:** globally `*` because the [embeddable badge](https://veritas-one-alpha.vercel.app/embed) is designed to work on any third-party site. Every expensive endpoint is per-IP rate-limited, so wildcard CORS isn't an abuse vector.
+
+## Security posture
+
+- `backend/.env` is git-ignored; keys have been rotated since first exposure.
+- B2 application keys are **bucket-scoped**, not the master key. Two independent keys — one for the main bucket, one for the WORM-locked bucket.
+- Public bucket access is disabled; every media URL served to the browser is a time-limited presigned GET.
+- Rate limits are the abuse ceiling on paid-API endpoints, not just the retry ceiling.
+- WORM lock **adversarially tested** — a direct `DeleteObject` on a locked manifest version returns `AccessDenied`.

@@ -704,6 +704,21 @@ function ProvenanceModal({
           </dd>
         </dl>
 
+        {run.caption && (
+          <div className="rounded-2xl border border-accent/25 bg-accent-soft p-3">
+            <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-accent mb-1.5">
+              <Sparkles className="h-3 w-3" />
+              AI Caption
+              <span className="text-muted-foreground/50 font-normal normal-case tracking-normal">
+                &middot; step 2 &middot; {run.caption_model?.split("/").pop() ?? "vlm"}
+              </span>
+            </div>
+            <p className="text-xs leading-relaxed text-foreground/85">
+              &ldquo;{run.caption}&rdquo;
+            </p>
+          </div>
+        )}
+
         {lineage.length > 1 && (
           <>
             <Separator className="bg-line/50" />

@@ -15,6 +15,8 @@ export type RunSummary = {
   asset_key: string | null;
   manifest_key: string;
   verified: boolean;
+  caption: string | null;
+  caption_model: string | null;
 };
 
 export type GenerateResponse = {
@@ -32,6 +34,8 @@ export type GenerateResponse = {
   manifest_verified: boolean;
   manifest_key: string | null;
   asset_signed_url?: string;
+  caption: string | null;
+  caption_model: string | null;
 };
 
 export type VerifyResponse = {

@@ -29,6 +29,10 @@ class RunSummary:
     asset_key: str | None
     manifest_key: str
     verified: bool
+    # AI-generated caption from a chained vision-model step (may be None for
+    # single-step runs like the mock provider or older manifests).
+    caption: str | None = None
+    caption_model: str | None = None
 
 
 def _manifest_keys() -> list[str]:
@@ -44,6 +48,30 @@ def _first_output_asset(step: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _extract_caption(steps: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+    """Read a caption + its model out of a manifest's step 1 (if it exists).
+
+    The manifest's step-1 is the chained vision-model step. Different
+    Genblaze versions have written the text output in a few different
+    places — probe them defensively so old and new manifests both work.
+    """
+    if len(steps) < 2:
+        return None, None
+    cap_step = steps[1]
+    model = cap_step.get("model")
+    for field in ("text", "output_text"):
+        val = cap_step.get(field)
+        if isinstance(val, str) and val.strip():
+            return val.strip(), model
+    for asset in cap_step.get("assets") or []:
+        media = (asset.get("media_type") or "").lower()
+        if media.startswith("text/"):
+            val = asset.get("text") or asset.get("content")
+            if isinstance(val, str) and val.strip():
+                return val.strip(), model
+    return None, model
+
+
 def _summarize(manifest_key: str, m: dict[str, Any]) -> RunSummary:
     run = m.get("run", {})
     steps = run.get("steps") or []
@@ -55,6 +83,7 @@ def _summarize(manifest_key: str, m: dict[str, Any]) -> RunSummary:
     if f"{bucket}/" in url:
         asset_key = url.split(f"{bucket}/", 1)[-1]
     date = manifest_key.split("/runs/", 1)[-1].split("/", 1)[0]
+    caption, caption_model = _extract_caption(steps)
     return RunSummary(
         run_id=run.get("run_id", ""),
         parent_run_id=run.get("parent_run_id"),
@@ -70,6 +99,8 @@ def _summarize(manifest_key: str, m: dict[str, Any]) -> RunSummary:
         asset_key=asset_key,
         manifest_key=manifest_key,
         verified=run.get("status") == "completed",
+        caption=caption,
+        caption_model=caption_model,
     )
 
 

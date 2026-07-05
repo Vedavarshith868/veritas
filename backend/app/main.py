@@ -12,16 +12,31 @@ Endpoints:
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+import os
+
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from . import catalog
 from .config import get_settings
 from .pipeline import generate_campaign, generate_media
 from .storage import presigned_url
 
+# Per-IP rate limits. Defaults protect the paid-API endpoints against abuse
+# (each /api/generate call spends real NVIDIA quota); read endpoints have
+# looser limits. Judges can bump via env vars during testing.
+_LIMIT_GENERATE = os.getenv("RATE_LIMIT_GENERATE", "10/hour")
+_LIMIT_CAMPAIGN = os.getenv("RATE_LIMIT_CAMPAIGN", "3/hour")
+_LIMIT_VERIFY = os.getenv("RATE_LIMIT_VERIFY", "60/hour")
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(title="Veritas API", version="0.1.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -62,7 +77,8 @@ def health() -> dict:
 
 
 @app.post("/api/generate")
-def generate(req: GenerateRequest) -> dict:
+@limiter.limit(_LIMIT_GENERATE)
+def generate(request: Request, req: GenerateRequest) -> dict:
     try:
         r = generate_media(req.prompt, modality=req.modality, parent_run_id=req.parent_run_id)
     except Exception as exc:  # surface pipeline errors cleanly to the UI
@@ -80,7 +96,8 @@ class CampaignRequest(BaseModel):
 
 
 @app.post("/api/campaign")
-def campaign(req: CampaignRequest) -> dict:
+@limiter.limit(_LIMIT_CAMPAIGN)
+def campaign(request: Request, req: CampaignRequest) -> dict:
     try:
         campaign_id, results = generate_campaign(
             req.brief, req.variant_prompts, modality=req.modality
@@ -123,7 +140,8 @@ def asset_url(key: str = Query(...)) -> dict:
 
 
 @app.post("/api/verify")
-async def verify(file: UploadFile = File(...)) -> dict:
+@limiter.limit(_LIMIT_VERIFY)
+async def verify(request: Request, file: UploadFile = File(...)) -> dict:
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="empty file")
@@ -139,7 +157,8 @@ class VerifyHashRequest(BaseModel):
 
 
 @app.post("/api/verify-hash")
-def verify_hash(req: VerifyHashRequest) -> dict:
+@limiter.limit(_LIMIT_VERIFY)
+def verify_hash(request: Request, req: VerifyHashRequest) -> dict:
     result = catalog.verify_sha256(req.sha256)
     result["sha256"] = req.sha256.lower()
     return result

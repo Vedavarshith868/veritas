@@ -37,3 +37,11 @@ services:
         value: auto
       - key: CORS_ORIGINS
         sync: false
+      # Per-IP rate limits — bump if you're doing a heavy demo. Format is
+      # slowapi's "<count>/<period>" (e.g. "20/hour", "1/minute").
+      - key: RATE_LIMIT_GENERATE
+        value: "10/hour"
+      - key: RATE_LIMIT_CAMPAIGN
+        value: "3/hour"
+      - key: RATE_LIMIT_VERIFY
+        value: "60/hour"

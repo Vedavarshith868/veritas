@@ -65,6 +65,20 @@ def test_extract_caption_from_text_asset() -> None:
     assert model == "vlm"
 
 
+def test_extract_caption_from_asset_metadata_text() -> None:
+    # NvidiaChatProvider stashes the real caption in metadata['text'] — its
+    # asset.url/text fields are placeholders (see _patch_nvidia_chat_text_asset
+    # in pipeline.py). This is the shape actually persisted in live manifests.
+    steps = [
+        {},
+        {"model": "vlm",
+         "assets": [{"media_type": "text/plain", "metadata": {"text": "metadata caption"}}]},
+    ]
+    caption, model = _extract_caption(steps)
+    assert caption == "metadata caption"
+    assert model == "vlm"
+
+
 def test_extract_caption_ignores_non_text_asset() -> None:
     # A step with only an image asset should not produce a caption
     steps = [

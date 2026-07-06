@@ -31,3 +31,5 @@ nvidia-image-*.png
 
 # Demo-video automation tooling + generated media — local only
 /video-automation/
+
+.vercel

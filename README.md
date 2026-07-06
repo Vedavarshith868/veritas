@@ -53,7 +53,7 @@ Additional B2-native touches:
 - **Live queryable-B2 endpoints** — `/api/runs/by-provider?provider=...` and `/api/runs/by-campaign?campaign_id=...` do O(list) prefix scans against the secondary indexes instead of manifest full-scans.
 
 ### 4 · Use of Genblaze
-- **Multi-step pipeline** — every image generation is a chained `Pipeline.step(image_provider).step(chat_provider, input_from=0)` — flux.1-dev produces the image, `meta/llama-3.2-11b-vision-instruct` captions it, and **both steps are signed into the same manifest** so the AI-generated description is cryptographically bound to the exact image bytes.
+- **Multi-step, cross-provider pipeline** — every image generation is a chained `Pipeline.step(image_provider).step(chat_provider, input_from=0)`. Replicate's `flux-schnell` produces the image, NVIDIA's `meta/llama-3.2-11b-vision-instruct` (a separate NIM endpoint, different vendor entirely) captions it, and **both steps are signed into the same manifest** so the AI-generated description is cryptographically bound to the exact image bytes — even though two independent vendors made it.
 - **Real fallback chains** on every real-provider path (`fallback_models=[...]`) — GMI image: seedream-4-0 → seedream-3-0; GMI video: pixverse-v5.6-t2v → wan2.6-r2v; NVIDIA vision: llama-3.2-11b → 90b.
 - **Real batch orchestration** for campaigns — `Pipeline.batch_run(prompts=[...], max_concurrency=3, fail_fast=False)`. Not a for-loop wearing a batch costume; genuine concurrent Genblaze runs with per-variant failure isolation.
 - **Manifest.verify() is the source of truth** — the "verified" badge in the UI reflects a passed cryptographic check that runs *inside* the pipeline, not a status flag we set ourselves.
@@ -63,9 +63,9 @@ Additional B2-native touches:
 The pipeline auto-selects the provider per modality. Set the corresponding key
 and the path activates:
 
-| Modality | Live path (this deploy)     | Auto-fallbacks (activate on key)                 |
-|----------|-----------------------------|--------------------------------------------------|
-| Image    | NVIDIA `flux.1-dev`         | GMI Cloud `seedream-4-0` → `seedream-3-0`        |
+| Modality | Live path (this deploy)                                    | Auto-fallbacks (activate on key)                 |
+|----------|-------------------------------------------------------------|--------------------------------------------------|
+| Image    | Replicate `flux-schnell` + NVIDIA `llama-3.2-11b` caption   | NVIDIA `flux.1-dev` (own two-step) → GMI Cloud `seedream-4-0` → `seedream-3-0` |
 | Video    | (none — image demo)         | GMI Cloud `pixverse-v5.6-t2v` → `wan2.6-r2v`     |
 | Audio    | (none — image demo)         | ElevenLabs `eleven_flash_v2_5` → `turbo_v2_5`    |
 

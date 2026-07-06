@@ -25,6 +25,7 @@ class Settings:
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
     elevenlabs_api_key: str = os.getenv("ELEVENLABS_API_KEY", "")
     nvidia_api_key: str = os.getenv("NVIDIA_API_KEY", "")
+    replicate_api_token: str = os.getenv("REPLICATE_API_TOKEN", "")
 
     # App
     prefix: str = os.getenv("VERITAS_PREFIX", "veritas")
@@ -47,6 +48,10 @@ class Settings:
     @property
     def has_nvidia(self) -> bool:
         return bool(self.nvidia_api_key) and self.provider_mode != "mock"
+
+    @property
+    def has_replicate(self) -> bool:
+        return bool(self.replicate_api_token) and self.provider_mode != "mock"
 
     def require_b2(self) -> None:
         missing = [k for k in ("b2_key_id", "b2_app_key", "b2_bucket") if not getattr(self, k)]

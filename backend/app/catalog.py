@@ -66,7 +66,11 @@ def _extract_caption(steps: list[dict[str, Any]]) -> tuple[str | None, str | Non
     for asset in cap_step.get("assets") or []:
         media = (asset.get("media_type") or "").lower()
         if media.startswith("text/"):
-            val = asset.get("text") or asset.get("content")
+            val = (
+                asset.get("text")
+                or asset.get("content")
+                or (asset.get("metadata") or {}).get("text")
+            )
             if isinstance(val, str) and val.strip():
                 return val.strip(), model
     return None, model

@@ -115,6 +115,41 @@ def _patch_nvidia_windows_file_uri() -> None:
         _nvidia_image.save_bytes_to_output_dir = _patched
 
 
+def _patch_nvidia_chat_text_asset() -> None:
+    """Work around genblaze_nvidia's synthetic ``text:`` asset URL scheme.
+
+    ``NvidiaChatProvider.generate`` (Asset.text hasn't shipped yet per its own
+    comment) sets the output asset's url to ``f"text:{sha256}"`` and stashes
+    the real caption in ``asset.metadata["text"]``. ``ObjectStorageSink``'s
+    ``AssetTransfer`` only special-cases ``file://``; every other scheme goes
+    through its HTTPS-only downloader, so it raises "Only HTTPS URLs are
+    allowed" on ``text:`` and aborts the *entire* run's manifest upload —
+    caught live chaining a caption step for the first time in this session.
+    Rewrite the synthetic url to a real local file so it rides the same
+    file:// upload path our image providers already use. No-op if the
+    upstream shape changes (module identity check on the patched method).
+    """
+    try:
+        from genblaze_nvidia.chat_provider import NvidiaChatProvider
+    except ImportError:
+        return
+
+    original = NvidiaChatProvider.generate
+
+    def _patched(self, step, config=None):
+        result = original(self, step, config)
+        for asset in getattr(result, "assets", None) or []:
+            if asset.url.startswith("text:") and not asset.url.startswith("text://"):
+                text = (asset.metadata or {}).get("text", "")
+                path = _STAGE_DIR / f"caption-{uuid.uuid4().hex[:12]}.txt"
+                path.write_text(text, encoding="utf-8")
+                asset.url = _local_file_url(path)
+        return result
+
+    if getattr(original, "__module__", "") != __name__:
+        NvidiaChatProvider.generate = _patched
+
+
 def _local_file_url(path: Path) -> str:
     """Cross-platform file: URL that Genblaze's transfer parser resolves correctly.
 
@@ -155,23 +190,73 @@ def _build_pipeline(
     """
     s = get_settings()
 
-    # Image: NVIDIA first — confirmed working on this account's free tier.
-    # GMI's image path is fully wired but its account has 0 credits right
-    # now; it stays as the second choice for whenever that clears.
+    # Image: Replicate first — paid, currently reliable, and its output is a
+    # real https:// CDN URL (see below). NVIDIA's flux endpoint has had a
+    # sustained free-tier outage this session, so it drops to second choice
+    # even though its key is present; GMI's image path is fully wired but its
+    # account has 0 credits.
+    if s.has_replicate and modality == Modality.IMAGE:
+        # Real, currently-reliable image generation: Replicate's flux-schnell
+        # (NVIDIA's free-tier flux endpoint has had a sustained outage this
+        # session). Replicate's output is a genuine https:// CDN URL — unlike
+        # NVIDIA's own image provider, which stages to a local file:// path
+        # that a *second* provider can't fetch remotely — so it chains
+        # cleanly into a captioning step with zero local-file plumbing.
+        from genblaze_core.providers import RetryPolicy
+        from genblaze_replicate import ReplicateProvider
+
+        retry = RetryPolicy.aggressive()
+        image_provider = ReplicateProvider(
+            api_token=s.replicate_api_token, http_timeout=120.0, retry_policy=retry,
+        )
+        model = "black-forest-labs/flux-schnell"
+        pipe = Pipeline(name, project_id=project_id).step(
+            image_provider, model=model, prompt=prompt, modality=Modality.IMAGE,
+        )
+
+        if s.has_nvidia:
+            # Cross-provider multi-step chain: NVIDIA's vision-chat model
+            # lives on a completely separate NIM endpoint from the flux
+            # image endpoint that's been down, and it happily fetches an
+            # external https URL — verified live against a real Replicate
+            # output before wiring this in. Both steps still land in the
+            # same Genblaze manifest, so the caption stays cryptographically
+            # bound to the exact image bytes even though two vendors made it.
+            from genblaze_nvidia.chat_provider import NvidiaChatProvider
+
+            _patch_nvidia_chat_text_asset()
+            caption_provider = NvidiaChatProvider(timeout=90.0, retry_policy=retry)
+            caption_model = "meta/llama-3.2-11b-vision-instruct"
+            pipe = pipe.step(
+                caption_provider,
+                model=caption_model,
+                prompt=(
+                    "Describe this image in one factual sentence for provenance "
+                    "metadata. Focus on visible content — objects, setting, "
+                    "composition. Skip mood, adjectives, and artistic style."
+                ),
+                modality=Modality.TEXT,
+                input_from=0,
+                fallback_models=["meta/llama-3.2-90b-vision-instruct"],
+            )
+        return pipe, "replicate", model
+
     if s.has_nvidia and modality == Modality.IMAGE:
-        # Two-step Genblaze pipeline, both on the same NVIDIA free-tier key:
-        #   step 0 → flux.1-dev generates the image
-        #   step 1 → llama-3.2-vision captions it, chained via input_from=0
-        # Both steps are signed into the same manifest, so the caption is
-        # cryptographically bound to the exact image bytes it describes —
-        # provenance covers not just "what was made" but "what it is."
-        # Probed LIVE: flux.1-dev + llama-3.2-{11b,90b}-vision-instruct all
-        # respond 200 on this account; SDXL/flux-schnell 404, so they're
-        # not used as fallbacks (a bad fallback is worse than none).
+        # Fallback when Replicate isn't configured: NVIDIA's own two-step
+        # chain (flux.1-dev image -> llama-3.2-vision caption), both on the
+        # same free-tier key. Note: the image step stages to a local
+        # file:// path (see _patch_nvidia_windows_file_uri), which the
+        # caption step then references directly — that only works when
+        # both providers run in-process against the same filesystem, unlike
+        # the Replicate path above which hands the caption step a real
+        # https:// URL. Probed LIVE: flux.1-dev + llama-3.2-{11b,90b}-vision
+        # -instruct all respond 200 on this account; SDXL/flux-schnell 404,
+        # so they're not used as fallbacks (a bad fallback is worse than none).
         from genblaze_nvidia.image import NvidiaImageProvider
         from genblaze_nvidia.chat_provider import NvidiaChatProvider, RetryPolicy
 
         _patch_nvidia_windows_file_uri()
+        _patch_nvidia_chat_text_asset()
         # NVIDIA's free-tier image endpoint has been intermittently
         # returning 500s and read timeouts during the hackathon window.
         # Aggressive retry gives a real production-readiness answer to
@@ -262,6 +347,12 @@ def _extract_text_output(step: Any) -> str | None:
         media = (getattr(asset, "media_type", "") or "").lower()
         if not media.startswith("text/"):
             continue
+        # NvidiaChatProvider stashes the real caption in metadata['text'] —
+        # its asset.url is a synthetic placeholder (see
+        # _patch_nvidia_chat_text_asset), not the content itself.
+        meta_text = (getattr(asset, "metadata", None) or {}).get("text")
+        if isinstance(meta_text, str) and meta_text.strip():
+            return meta_text
         val = getattr(asset, "text", None) or getattr(asset, "url", None)
         if isinstance(val, str) and val.strip():
             # `text/plain` assets carry their content directly in `.text`;

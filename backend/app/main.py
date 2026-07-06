@@ -65,6 +65,7 @@ def health() -> dict:
     active = [
         name
         for name, on in (
+            ("replicate", s.has_replicate),
             ("nvidia", s.has_nvidia),
             ("gmicloud", s.has_gmi),
             ("elevenlabs", s.has_elevenlabs),

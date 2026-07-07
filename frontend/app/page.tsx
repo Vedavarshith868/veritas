@@ -53,6 +53,40 @@ const MODALITY_ICON: Record<string, typeof ImageIcon> = {
   audio: AudioLines,
 };
 
+// Studio's gallery data (runs, signed asset URLs, stats) is re-fetched from
+// scratch every time this page mounts — including a signed-URL round trip
+// per asset — because Next.js unmounts the route on navigation to /verify or
+// /embed. Cache the last-known snapshot in sessionStorage so returning to
+// Studio renders instantly from cache while refresh() quietly revalidates,
+// instead of flashing empty and re-fetching everything.
+const STUDIO_CACHE_KEY = "veritas:studio-cache:v1";
+
+type StudioCache = {
+  runs: RunSummary[];
+  urls: UrlCache;
+  stats: Stats | null;
+  providerMode: string;
+};
+
+function loadStudioCache(): StudioCache | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(STUDIO_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as StudioCache) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStudioCache(cache: StudioCache) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(STUDIO_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    /* storage full or unavailable — cache is a nice-to-have, skip silently */
+  }
+}
+
 export default function StudioPage() {
   const [mode, setMode] = useState<Mode>("single");
   const [prompt, setPrompt] = useState("");
@@ -62,6 +96,10 @@ export default function StudioPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [campaignStatus, setCampaignStatus] = useState<string | null>(null);
+  // Plain SSR-safe defaults — reading sessionStorage here (even guarded by a
+  // typeof window check) makes the client's first render diverge from the
+  // server's, which is a React hydration error. Cache is hydrated in a
+  // client-only effect below, after the initial render has already matched.
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [urls, setUrls] = useState<UrlCache>({});
   const [selected, setSelected] = useState<RunSummary | null>(null);
@@ -76,10 +114,28 @@ export default function StudioPage() {
     api.stats().then(setStats).catch(() => {});
   }, []);
 
+  // Hydrate from the last-known snapshot right after mount (client-only, runs
+  // after the initial hydration-matching render) so returning from /verify or
+  // /embed shows the gallery instantly instead of flashing empty.
+  useEffect(() => {
+    const cached = loadStudioCache();
+    if (!cached) return;
+    setRuns(cached.runs);
+    setUrls(cached.urls);
+    setStats(cached.stats);
+    setProviderMode(cached.providerMode);
+  }, []);
+
   useEffect(() => {
     refresh().catch((e) => setError(String(e)));
     api.health().then((h) => setProviderMode(h.provider_mode)).catch(() => {});
   }, [refresh]);
+
+  // Keep the cache in sync so the next mount (e.g. navigating back from
+  // /verify or /embed) can render this snapshot immediately.
+  useEffect(() => {
+    saveStudioCache({ runs, urls, stats, providerMode });
+  }, [runs, urls, stats, providerMode]);
 
   useEffect(() => {
     const missing = runs
@@ -273,12 +329,14 @@ export default function StudioPage() {
                     className="space-y-2"
                   >
                     <Input
+                      data-testid="campaign-brief"
                       value={brief}
                       onChange={(e) => setBrief(e.target.value)}
                       placeholder="Campaign brief, e.g. Autumn coffee shop ad"
                       className="rounded-2xl bg-black/30 border-line/40 text-sm"
                     />
                     <Textarea
+                      data-testid="campaign-variants"
                       value={variantText}
                       onChange={(e) => setVariantText(e.target.value)}
                       rows={3}
@@ -288,6 +346,7 @@ export default function StudioPage() {
                     <div className="flex items-center gap-2">
                       <ModalitySelect value={modality} onChange={setModality} />
                       <Button
+                        data-testid="generate-campaign-button"
                         onClick={generateCampaignFn}
                         disabled={
                           busy ||
@@ -752,7 +811,7 @@ function ProvenanceModal({
   }, [run.manifest_key]);
 
   return (
-    <DialogContent data-testid="provenance-modal" className="sm:max-w-lg p-0 gap-0 overflow-hidden rounded-3xl">
+    <DialogContent data-testid="provenance-modal" className="sm:max-w-lg p-0 gap-0 rounded-3xl">
       {url && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={url} alt="" className="w-full max-h-72 object-cover" />

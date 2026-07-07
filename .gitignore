@@ -33,3 +33,4 @@ nvidia-image-*.png
 /video-automation/
 
 .vercel
+.env*

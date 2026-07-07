@@ -17,7 +17,65 @@ Built for the **Backblaze Generative Media Hackathon** (Genblaze + B2).
 
 ---
 
+## What it does
+
+Every arrow below is a real Genblaze call or a real Backblaze B2 object — not
+an aspirational diagram:
+
 ![Veritas architecture — prompt through Genblaze to Backblaze B2 to public proof](docs/architecture.svg)
+
+Walking through every feature, in the order you'd actually hit them in the app:
+
+- **Generate (Single mode).** Describe an asset, pick a modality, hit
+  Generate. A real two-step Genblaze pipeline runs: Replicate's
+  `flux-schnell` produces the image, then NVIDIA's
+  `llama-3.2-11b-vision-instruct` captions it — both steps signed into one
+  manifest and uploaded to B2. The "Verified" badge only appears after
+  `Manifest.verify()` actually passes; it's a cryptographic check, not a UI
+  flag.
+- **Campaigns.** Switch to Campaign mode, write one brief and 2-12 variant
+  prompts, hit Generate campaign. Genblaze's `Pipeline.batch_run` fans them
+  out as one real concurrent batch (bounded concurrency, per-variant failure
+  isolation) — not a loop calling generate N times. Every variant gets its
+  own manifest, grouped under a shared `campaign_id`.
+- **Campaigns section.** A dedicated view below the gallery lists every
+  distinct campaign as its own card — brief, variant count, verified count,
+  a stacked thumbnail preview. Click one to open every variant it produced
+  in a single grid; click a variant to open its full provenance modal.
+- **Generated Assets gallery.** A bento-style grid of everything ever
+  generated, with corner tags: **Verified** (passed the cryptographic
+  check), **Campaign** (part of a batch), **Iteration** (a regenerate of an
+  earlier asset).
+- **Provenance modal.** Click any card for the full record: provider/model,
+  sha-256 (copyable), run id, campaign id, exact B2 storage path, the
+  AI-generated caption (when the multi-step chain ran), a raw manifest JSON
+  toggle, and a **Certificate** link.
+- **Regenerate, with lineage.** "Regenerate (linked)" creates a new run that
+  records `parent_run_id` pointing at the one it came from. The modal
+  renders the full iteration chain, so an asset's entire edit history is
+  auditable, not just its latest state.
+- **`/verify` — public, no login.** Drop any file and its sha-256 is checked
+  against B2 in O(1) time (a purpose-built hash index, not a manifest scan).
+  A match returns full provenance metadata; a miss says so plainly. Change
+  one pixel and a real match breaks.
+- **`/certificate` — a portable proof.** One click generates a signed
+  provenance certificate: prompt, hash, storage location, WORM lock status
+  if applicable. Printable to PDF via the browser, or downloadable as raw
+  JSON — for legal/editorial workflows that need proof outside the app.
+- **`/embed` + `badge.js` — infrastructure other sites can use.** A 4KB
+  Shadow-DOM'd `<script>` any third-party site can drop next to an image;
+  it live-checks the asset's hash against Veritas over one HTTPS request,
+  no login, no SDK. `/embed` doubles as a live sandbox to try it against a
+  real generated asset before copying the snippet.
+- **System of Record dashboard.** Six tiles on the homepage — manifests,
+  assets (+ total size), the verify-index, secondary indexes, WORM-locked
+  copies, multi-step runs — computed fresh from B2 on every request. No
+  cache table, no separate database, ever.
+- **WORM / Object Lock bucket.** Every manifest also gets a write-once copy
+  in a second, Object-Lock-enabled B2 bucket in COMPLIANCE mode. This was
+  adversarially tested, not just implemented: an explicit-version
+  `DeleteObject` on a locked manifest returns `AccessDenied` — not even the
+  account owner can quietly edit history.
 
 ---
 

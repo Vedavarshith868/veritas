@@ -47,6 +47,16 @@ import {
 type UrlCache = Record<string, string>;
 type Mode = "single" | "campaign";
 
+const CAMPAIGN_NAME_PREFIX = "veritas-campaign:";
+
+type CampaignGroup = {
+  campaignId: string;
+  brief: string;
+  runs: RunSummary[];
+  verifiedCount: number;
+  date: string;
+};
+
 const MODALITY_ICON: Record<string, typeof ImageIcon> = {
   image: ImageIcon,
   video: Video,
@@ -103,6 +113,7 @@ export default function StudioPage() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [urls, setUrls] = useState<UrlCache>({});
   const [selected, setSelected] = useState<RunSummary | null>(null);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [providerMode, setProviderMode] = useState<string>("...");
   const [stats, setStats] = useState<Stats | null>(null);
 
@@ -216,6 +227,37 @@ export default function StudioPage() {
   const campaignCount = new Set(
     runs.filter((r) => r.campaign_id).map((r) => r.campaign_id),
   ).size;
+
+  // Every campaign run's manifest carries `name: "veritas-campaign:<brief>"`
+  // (set once in pipeline.py at campaign creation) — parse that back out
+  // instead of a second API round trip just to label the group.
+  const campaigns = useMemo<CampaignGroup[]>(() => {
+    const groups = new Map<string, RunSummary[]>();
+    for (const r of runs) {
+      if (!r.campaign_id) continue;
+      const arr = groups.get(r.campaign_id);
+      if (arr) arr.push(r);
+      else groups.set(r.campaign_id, [r]);
+    }
+    return [...groups.entries()]
+      .map(([campaignId, group]) => {
+        const first = group[0];
+        const brief = first.name?.startsWith(CAMPAIGN_NAME_PREFIX)
+          ? first.name.slice(CAMPAIGN_NAME_PREFIX.length)
+          : campaignId;
+        return {
+          campaignId,
+          brief,
+          runs: group,
+          verifiedCount: group.filter((r) => r.verified).length,
+          date: first.date,
+        };
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [runs]);
+  const selectedCampaign = campaigns.find(
+    (c) => c.campaignId === selectedCampaignId,
+  );
 
   return (
     <div className="space-y-16">
@@ -464,6 +506,15 @@ export default function StudioPage() {
         )}
       </section>
 
+      {/* Campaigns — one card per campaign_id, click through to every variant it produced */}
+      {campaigns.length > 0 && (
+        <CampaignsSection
+          campaigns={campaigns}
+          urls={urls}
+          onOpenCampaign={setSelectedCampaignId}
+        />
+      )}
+
       {/* B2 System of Record — proves live metrics come straight from B2, no separate DB */}
       {stats && <SystemOfRecordSection stats={stats} />}
 
@@ -486,6 +537,25 @@ export default function StudioPage() {
           />
         )}
       </Dialog>
+
+      {/* Campaign detail modal — every variant a campaign produced, in one grid */}
+      <Dialog
+        open={selectedCampaignId !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedCampaignId(null);
+        }}
+      >
+        {selectedCampaign && (
+          <CampaignModal
+            campaign={selectedCampaign}
+            urls={urls}
+            onSelectRun={(r) => {
+              setSelectedCampaignId(null);
+              setSelected(r);
+            }}
+          />
+        )}
+      </Dialog>
     </div>
   );
 }
@@ -497,6 +567,133 @@ function MetaPill({ children }: { children: React.ReactNode }) {
     <span className="rounded-full bg-white/5 border border-white/5 px-2.5 py-1 text-[10.5px] font-medium text-muted-foreground/70">
       {children}
     </span>
+  );
+}
+
+function CampaignsSection({
+  campaigns,
+  urls,
+  onOpenCampaign,
+}: {
+  campaigns: CampaignGroup[];
+  urls: UrlCache;
+  onOpenCampaign: (campaignId: string) => void;
+}) {
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-lg font-bold tracking-tight">Campaigns</h2>
+        <span className="text-xs text-muted-foreground/60">
+          {campaigns.length} total
+        </span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {campaigns.map((c) => (
+          <button
+            key={c.campaignId}
+            data-testid="campaign-card"
+            data-campaign-id={c.campaignId}
+            onClick={() => onOpenCampaign(c.campaignId)}
+            className="group flex items-center gap-3 rounded-2xl border border-line/60 bg-surface p-3.5 text-left transition-shadow hover:shadow-[0_0_0_1px_var(--accent-glow)]"
+          >
+            <div className="flex -space-x-3 shrink-0">
+              {c.runs.slice(0, 3).map((r) => (
+                <div
+                  key={r.run_id}
+                  className="h-11 w-11 overflow-hidden rounded-xl border-2 border-surface bg-surface-2"
+                >
+                  {r.asset_key && urls[r.asset_key] ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={urls[r.asset_key]}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : null}
+                </div>
+              ))}
+              {c.runs.length > 3 && (
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl border-2 border-surface bg-surface-2 text-[10px] font-bold text-muted-foreground">
+                  +{c.runs.length - 3}
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold">{c.brief}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground/60">
+                {c.runs.length} variant{c.runs.length === 1 ? "" : "s"} &middot;{" "}
+                {c.verifiedCount} verified
+              </p>
+            </div>
+            <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-colors group-hover:text-accent" />
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CampaignModal({
+  campaign,
+  urls,
+  onSelectRun,
+}: {
+  campaign: CampaignGroup;
+  urls: UrlCache;
+  onSelectRun: (run: RunSummary) => void;
+}) {
+  return (
+    <DialogContent
+      data-testid="campaign-modal"
+      className="sm:max-w-2xl p-0 gap-0 rounded-3xl"
+    >
+      <div className="space-y-4 p-5">
+        <div>
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+            Campaign
+          </p>
+          <h3 className="text-lg font-bold tracking-tight">{campaign.brief}</h3>
+          <p className="mt-1 text-xs text-muted-foreground/60">
+            {campaign.runs.length} variants &middot; {campaign.verifiedCount}{" "}
+            verified &middot; {campaign.date}
+          </p>
+        </div>
+        <Separator className="bg-line/50" />
+        <div className="grid max-h-[60vh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
+          {campaign.runs.map((r) => {
+            const url = r.asset_key ? urls[r.asset_key] : undefined;
+            return (
+              <button
+                key={r.run_id}
+                onClick={() => onSelectRun(r)}
+                className="group relative aspect-square overflow-hidden rounded-xl border border-line/60 bg-surface-2 text-left"
+              >
+                {url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={url}
+                    alt={r.prompt ?? ""}
+                    className="h-full w-full object-cover transition group-hover:brightness-110"
+                  />
+                ) : (
+                  <Skeleton className="h-full w-full rounded-none" />
+                )}
+                {r.verified && (
+                  <span className="absolute right-1.5 top-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[8.5px] font-bold uppercase text-accent-ink">
+                    Verified
+                  </span>
+                )}
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-2">
+                  <p className="line-clamp-1 text-[10.5px] text-white/90">
+                    {r.prompt}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </DialogContent>
   );
 }
 

@@ -1,6 +1,6 @@
 # Veritas — provenance-first generative media studio
 
-**Live app:** https://veritas-ebon-rho.vercel.app · **Backend:** https://veritas-backend-9iwa.onrender.com/api/health · **CI:** ![CI](https://github.com/Vedavarshith868/veritas/actions/workflows/ci.yml/badge.svg)
+**Live app:** https://veritas-ebon-rho.vercel.app · **Backend:** https://veritas-backend-9iwa.onrender.com/api/health · **Demo video:** https://youtu.be/6JzY13M0j5g · **CI:** ![CI](https://github.com/Vedavarshith868/veritas/actions/workflows/ci.yml/badge.svg)
 
 Every AI-generated image ships with a **cryptographically verifiable provenance
 manifest** stored on **Backblaze B2** — bound to the exact image bytes it

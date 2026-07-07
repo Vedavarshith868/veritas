@@ -5,6 +5,7 @@
 **Live app:** https://veritas-ebon-rho.vercel.app
 **Backend API:** https://veritas-backend-9iwa.onrender.com/api/health
 **Repo:** https://github.com/Vedavarshith868/veritas
+**Demo video:** https://youtu.be/6JzY13M0j5g
 
 > Note on Render's free tier: the backend spins down after 15 minutes of
 > inactivity, so the very first request can take 30-60 seconds to wake up.

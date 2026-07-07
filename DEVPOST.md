@@ -35,10 +35,11 @@ asset ships with proof of its own origin**, and anyone — not just the
 person who made it — can check that proof.
 
 - **Generate** — describe an asset, pick a modality, and it's created
-  through a real provider (NVIDIA NIM's `flux.1-dev` for images, with GMI
-  Cloud and ElevenLabs wired for image/video/audio), uploaded to Backblaze
-  B2, and stamped with a signed provenance manifest — all in one pipeline
-  run.
+  through a real two-step Genblaze pipeline: Replicate's `flux-schnell`
+  generates the image, then an NVIDIA vision model (`llama-3.2-11b-vision-instruct`)
+  captions it — both steps signed into one manifest, uploaded to Backblaze
+  B2. Provenance survives even though the two steps come from different
+  companies.
 - **Campaigns** — fan out a single brief into 2-12 prompt variants in one
   orchestrated batch (a real Genblaze `batch_run`, not a for-loop calling
   generate N times). Every variant gets its own asset, its own manifest,
@@ -57,6 +58,17 @@ person who made it — can check that proof.
   version, even as the account owner, returns `AccessDenied`. The proof of
   origin can't be quietly edited or deleted after the fact — by anyone,
   including me.
+- **Embeddable "Verified by Veritas" badge** — a 4KB Shadow-DOM'd
+  `<script>` any third-party site can drop next to an image; it live-checks
+  the asset's hash against Veritas over one HTTPS request, no login, no SDK.
+- **Downloadable provenance certificate** — one click generates a signed
+  certificate (printable HTML or raw JSON) with the prompt, hash, storage
+  location, and WORM lock status, for legal/editorial workflows that need
+  proof outside the app itself.
+- **System of record dashboard** — a live `/api/stats` panel on the
+  homepage showing manifest, asset, verify-index, secondary-index, and
+  WORM-copy counts computed fresh from B2 on every request — proof there's
+  no hidden database behind the curtain.
 
 ## How I built it
 
@@ -64,11 +76,18 @@ person who made it — can check that proof.
 thin FastAPI layer over Genblaze:
 
 - `Pipeline.step(provider, model=..., prompt=..., fallback_models=[...])`
-  builds each generation with real fallback chains per provider (e.g. GMI's
-  image path falls back from `seedream-4-0` to `seedream-3-0` on failure).
+  chains two real steps per generation — Replicate for the image,
+  NVIDIA's vision model for the caption (`input_from=0`) — with fallback
+  models and an aggressive retry policy on both NVIDIA endpoints for their
+  flaky free tier. GMI Cloud stays wired as a further fallback chain,
+  auto-routing on whichever provider keys are actually present.
 - `ObjectStorageSink` handles the B2 upload and manifest generation in one
   call — Genblaze, not my own code, owns the provenance manifest's
-  cryptographic integrity.
+  cryptographic integrity. (One real gap found here: the synthetic
+  `text:<sha256>` asset URL NVIDIA's chat provider returns isn't a real
+  transferable asset — fixed by writing the caption to a local temp file
+  and riding the same `file://` upload path already used for images, so
+  the caption ends up a real, hash-verified `.txt` object in B2 too.)
 - `Manifest.verify()` is called on every single generation before the
   result is ever returned to the frontend, so a "verified" badge in the UI
   reflects an actual passed cryptographic check, not a status flag.
@@ -77,6 +96,12 @@ thin FastAPI layer over Genblaze:
   doesn't sink the batch.
 - `project_id` (campaigns) and `parent_run_id` (iteration lineage) are
   Genblaze's own lineage primitives, not something bolted on afterward.
+- Per-IP rate limiting (slowapi) on every write/verify endpoint, and a
+  28-test pytest suite plus GitHub Actions CI running on every push —
+  production concerns, not just a working demo.
+- Two secondary B2 indexes (`by-provider`, `by-campaign`) written on every
+  generation, so `/api/runs/by-provider` and `/api/runs/by-campaign` do an
+  O(list) prefix scan instead of a full manifest scan.
 
 **B2 is the entire system of record** — there's no database. Runs,
 manifests, the verify-index, and WORM compliance copies all live as B2
@@ -112,14 +137,19 @@ Render backend and CORS locked to the deployed frontend origin.
   in my own mock-provider code first, fixed it, then hit the *identical*
   bug inside `genblaze_nvidia`'s output-writer and had to runtime-patch
   the third-party function rather than fork the package.
-- **Provider credits are a real hackathon hazard.** GMI Cloud's free-credit
-  signup form closed before I could claim credits, and my ElevenLabs
-  account got flagged for "unusual activity" on a residential connection.
-  Rather than block on either, I kept both integrations fully wired
-  (fallback chains and all) behind a priority order that puts whichever
-  provider is actually funded first — NVIDIA NIM ended up as the live
-  path, probed model-by-model until I found one enabled on the account's
-  free tier (`flux.1-dev`; a couple of others 404'd).
+- **Provider credits and free-tier uptime are a real hackathon hazard.**
+  GMI Cloud's free-credit signup form closed before I could claim credits,
+  my ElevenLabs account got flagged for "unusual activity" on a
+  residential connection and was dropped entirely, and NVIDIA's own
+  free-tier `flux.1-dev` image endpoint had a sustained outage. Rather than
+  block on any one provider, I kept every integration fully wired (fallback
+  chains and all) behind a priority order that auto-routes to whichever
+  provider is actually funded and healthy — a small paid Replicate credit
+  ended up as the primary image path, with NVIDIA repurposed for the
+  second, cross-provider caption step instead of sitting idle. That
+  discovery — that provenance survives even when the two steps come from
+  different companies — became a better hackathon story than same-vendor
+  chaining would have been.
 - **Object Lock needed adversarial testing, not just implementation.**
   It's easy to write code that *calls* an Object Lock API; it's different
   to confirm the lock actually holds. I tested it as an attacker would —
@@ -144,8 +174,15 @@ Render backend and CORS locked to the deployed frontend origin.
 - **Campaign fan-out that's a real orchestration primitive**, not a loop
   wearing an orchestration costume — `batch_run` with bounded concurrency
   and per-variant failure isolation.
-- Shipping a fully deployed, CORS-hardened, publicly testable app —
-  not just a local demo — before the writeup was even due.
+- **A real cross-provider chain**, not same-vendor theater — Replicate's
+  image and NVIDIA's caption, signed into one manifest, surviving even
+  though the two steps never touch the same company.
+- **Infrastructure other sites can plug into** — the embeddable badge and
+  downloadable certificate turn Veritas from a standalone tool into
+  something a third party can build on with zero integration work.
+- Shipping a fully deployed, CORS-hardened, publicly testable app — with
+  rate limiting, a pytest suite, and CI on every push — not just a local
+  demo, before the writeup was even due.
 
 ## What I learned
 
@@ -161,19 +198,19 @@ that.
 
 ## What's next for Veritas
 
-- Redeem GMI Cloud credits (or an equivalent) to run image *and* video
-  generation through a second live provider, proving the multi-provider
-  fallback chain end-to-end rather than just in code.
-- A public, embeddable "verified by Veritas" badge — so any site hosting
-  an AI-generated asset can link back to its live provenance record with
-  zero integration work.
+- Redeem GMI Cloud credits (or an equivalent) to run video generation
+  through a second live provider, proving the multi-provider fallback
+  chain end-to-end on a second modality, not just images.
 - Richer campaign analytics (cost/latency per variant, side-by-side
   comparison view).
-- A signed, downloadable provenance certificate (PDF/JSON) per asset, for
-  workflows that need proof outside the app itself.
+- A PDF export path for the provenance certificate that doesn't depend on
+  the browser's print dialog, for headless/automated compliance workflows.
+- Real signature/KMS-backed manifest signing, on top of Genblaze's
+  built-in integrity check, for organizations that need their own key in
+  the chain of custody.
 
 ## Built with
 
-Python · FastAPI · Genblaze · Backblaze B2 · boto3 · NVIDIA NIM · GMI
-Cloud · ElevenLabs · Next.js · React · TypeScript · Tailwind CSS · Framer
+Python · FastAPI · Genblaze · Backblaze B2 · boto3 · Replicate · NVIDIA
+NIM · GMI Cloud · Next.js · React · TypeScript · Tailwind CSS · Framer
 Motion · Vercel · Render

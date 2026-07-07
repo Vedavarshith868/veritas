@@ -2,7 +2,7 @@
  * Veritas provenance badge.
  *
  *   <script
- *     src="https://veritas-one-alpha.vercel.app/badge.js"
+ *     src="https://veritas-ebon-rho.vercel.app/badge.js"
  *     data-sha256="<the asset's sha-256 hex string>"
  *     data-theme="dark"          <!-- optional: "dark" | "light" -->
  *     defer

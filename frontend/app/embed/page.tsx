@@ -34,7 +34,7 @@ export default function EmbedPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const origin =
-    typeof window !== "undefined" ? window.location.origin : "https://veritas-one-alpha.vercel.app";
+    typeof window !== "undefined" ? window.location.origin : "https://veritas-ebon-rho.vercel.app";
 
   const snippet = useMemo(
     () =>

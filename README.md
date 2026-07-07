@@ -1,6 +1,6 @@
 # Veritas — provenance-first generative media studio
 
-**Live app:** https://veritas-one-alpha.vercel.app · **Backend:** https://veritas-backend-9iwa.onrender.com/api/health · **CI:** ![CI](https://github.com/Vedavarshith868/veritas/actions/workflows/ci.yml/badge.svg)
+**Live app:** https://veritas-ebon-rho.vercel.app · **Backend:** https://veritas-backend-9iwa.onrender.com/api/health · **CI:** ![CI](https://github.com/Vedavarshith868/veritas/actions/workflows/ci.yml/badge.svg)
 
 Every AI-generated image ships with a **cryptographically verifiable provenance
 manifest** stored on **Backblaze B2** — bound to the exact image bytes it
@@ -21,7 +21,7 @@ Built for the **Backblaze Generative Media Hackathon** (Genblaze + B2).
 
 ### 1 · Real-world utility
 - **Public `/verify` needs no login.** Anyone hosting an AI-generated asset can point their audience at it.
-- **Embeddable "Verified by Veritas" badge widget** ([`/embed`](https://veritas-one-alpha.vercel.app/embed)) — a 4KB Shadow-DOM'd script third-party sites drop next to any AI image; one HTTPS request, live check. Turns Veritas from a standalone tool into infrastructure.
+- **Embeddable "Verified by Veritas" badge widget** ([`/embed`](https://veritas-ebon-rho.vercel.app/embed)) — a 4KB Shadow-DOM'd script third-party sites drop next to any AI image; one HTTPS request, live check. Turns Veritas from a standalone tool into infrastructure.
 - **Downloadable provenance certificate** — printable one-page HTML per asset (or raw JSON), for legal / editorial / compliance workflows.
 - **Iteration lineage** (`parent_run_id`) — regenerate any asset and the new version links back to the one it came from. Editorial revision history is auditable, not just latest state.
 - **Campaigns** — one brief → 2-12 provable variants, each with its own manifest, grouped under a shared `campaign_id`.
@@ -129,7 +129,7 @@ The frontend proxies `/api/*` to the backend; override the target with
 
 - **Frontend:** Vercel — `BACKEND_URL` env var points `/api/*` at the Render backend.
 - **Backend:** Render Blueprint from `render.yaml`. Secrets injected via the Render dashboard, never committed.
-- **CORS:** globally `*` because the [embeddable badge](https://veritas-one-alpha.vercel.app/embed) is designed to work on any third-party site. Every expensive endpoint is per-IP rate-limited, so wildcard CORS isn't an abuse vector.
+- **CORS:** globally `*` because the [embeddable badge](https://veritas-ebon-rho.vercel.app/embed) is designed to work on any third-party site. Every expensive endpoint is per-IP rate-limited, so wildcard CORS isn't an abuse vector.
 
 ## Security posture
 

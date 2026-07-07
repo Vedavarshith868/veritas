@@ -2,7 +2,7 @@
 
 **Tagline:** Generate once. Prove it forever.
 
-**Live app:** https://veritas-one-alpha.vercel.app
+**Live app:** https://veritas-ebon-rho.vercel.app
 **Backend API:** https://veritas-backend-9iwa.onrender.com/api/health
 **Repo:** https://github.com/Vedavarshith868/veritas
 

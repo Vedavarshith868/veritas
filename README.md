@@ -17,6 +17,10 @@ Built for the **Backblaze Generative Media Hackathon** (Genblaze + B2).
 
 ---
 
+![Veritas architecture — prompt through Genblaze to Backblaze B2 to public proof](docs/architecture.svg)
+
+---
+
 ## The four judging criteria — how each is answered
 
 ### 1 · Real-world utility

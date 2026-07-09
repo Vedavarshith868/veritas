@@ -44,6 +44,7 @@ from .pipeline import (
 from .storage import get_backend, get_sink, read_bytes
 
 _COMIC_NAME_PREFIX = "veritas-comic:"
+_COMIC_SCRIPT_NAME_PREFIX = "veritas-comic-script:"
 _SCRIPT_MODEL = "meta/llama-3.2-11b-vision-instruct"
 _NARRATION_VOICE = "en-US-ChristopherNeural"
 _STYLE_SUFFIXES = {
@@ -244,6 +245,10 @@ def generate_comic(theme: str, pages: int = 4, style: str = "comic") -> ComicRes
     date = time.strftime("%Y-%m-%d")
     sink = get_sink()
     name = f"{_COMIC_NAME_PREFIX}{theme[:60]}"
+    # Distinct name prefix from the panel-image runs above, so the frontend
+    # can reliably filter the text-only script run out of image galleries
+    # (it has no image to show) while still finding it via project_id.
+    script_name = f"{_COMIC_SCRIPT_NAME_PREFIX}{theme[:50]}"
 
     # --- Step 1: the script, as a real single-step Genblaze run -----------
     s = get_settings()
@@ -253,7 +258,7 @@ def generate_comic(theme: str, pages: int = 4, style: str = "comic") -> ComicRes
         from genblaze_nvidia.chat_provider import NvidiaChatProvider
 
         chat_provider = NvidiaChatProvider(timeout=90.0, retry_policy=RetryPolicy.aggressive())
-        script_pipe = Pipeline(name, project_id=comic_id).step(
+        script_pipe = Pipeline(script_name, project_id=comic_id).step(
             chat_provider, model=_SCRIPT_MODEL, prompt=prompt, modality=Modality.TEXT,
             fallback_models=["meta/llama-3.2-90b-vision-instruct"],
         )
@@ -273,7 +278,7 @@ def generate_comic(theme: str, pages: int = 4, style: str = "comic") -> ComicRes
         def _factory(step):
             return [Asset(url=_local_file_url(mock_path), media_type="text/plain")]
 
-        script_pipe = Pipeline(name, project_id=comic_id).step(
+        script_pipe = Pipeline(script_name, project_id=comic_id).step(
             MockProvider(assets=_factory, cost_usd=0.0), model="mock-text-v1",
             prompt=prompt, modality=Modality.TEXT,
         )

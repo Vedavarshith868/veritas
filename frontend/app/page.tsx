@@ -16,9 +16,11 @@ import {
   RefreshCw,
   Loader2,
   Sparkles,
+  BookOpen,
+  Wand2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, type RunSummary, type Stats } from "@/lib/api";
+import { api, type RunSummary, type Stats, type ComicResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -45,9 +47,11 @@ import {
 } from "@/components/ui/tooltip";
 
 type UrlCache = Record<string, string>;
-type Mode = "single" | "campaign";
+type Mode = "single" | "campaign" | "comic";
+type ComicStyle = "comic" | "anime";
 
 const CAMPAIGN_NAME_PREFIX = "veritas-campaign:";
+const COMIC_NAME_PREFIX = "veritas-comic:";
 
 type CampaignGroup = {
   campaignId: string;
@@ -117,6 +121,14 @@ export default function StudioPage() {
   const [providerMode, setProviderMode] = useState<string>("...");
   const [stats, setStats] = useState<Stats | null>(null);
 
+  // Comic mode — theme -> Genblaze script + panel images -> composed strip
+  // + narration. See backend/app/comics.py for the full pipeline.
+  const [comicTheme, setComicTheme] = useState("");
+  const [comicStyle, setComicStyle] = useState<ComicStyle>("comic");
+  const [comicPages, setComicPages] = useState(4);
+  const [comics, setComics] = useState<ComicResult[]>([]);
+  const [selectedComic, setSelectedComic] = useState<ComicResult | null>(null);
+
   const refresh = useCallback(async () => {
     const { runs } = await api.runs();
     setRuns(runs);
@@ -140,6 +152,7 @@ export default function StudioPage() {
   useEffect(() => {
     refresh().catch((e) => setError(String(e)));
     api.health().then((h) => setProviderMode(h.provider_mode)).catch(() => {});
+    api.comics().then(({ comics }) => setComics(comics)).catch(() => {});
   }, [refresh]);
 
   // Keep the cache in sync so the next mount (e.g. navigating back from
@@ -223,6 +236,27 @@ export default function StudioPage() {
     }
   }, [brief, variantText, modality, busy, refresh]);
 
+  const generateComicFn = useCallback(async () => {
+    const theme = comicTheme.trim();
+    if (!theme || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.comic(theme, comicPages, comicStyle);
+      setComics((prev) => [result, ...prev]);
+      setSelectedComic(result);
+      toast.success(`Comic generated: ${result.pages.length} pages`, {
+        description: theme,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      toast.error("Comic generation failed", { description: msg });
+    } finally {
+      setBusy(false);
+    }
+  }, [comicTheme, comicPages, comicStyle, busy]);
+
   const verifiedCount = runs.filter((r) => r.verified).length;
   const campaignCount = new Set(
     runs.filter((r) => r.campaign_id).map((r) => r.campaign_id),
@@ -234,7 +268,10 @@ export default function StudioPage() {
   const campaigns = useMemo<CampaignGroup[]>(() => {
     const groups = new Map<string, RunSummary[]>();
     for (const r of runs) {
-      if (!r.campaign_id) continue;
+      // Comic runs also carry a campaign_id (Genblaze's project_id groups
+      // both mechanisms the same way) — they get their own Comics section
+      // below instead of showing up here.
+      if (!r.campaign_id || r.name?.startsWith(COMIC_NAME_PREFIX)) continue;
       const arr = groups.get(r.campaign_id);
       if (arr) arr.push(r);
       else groups.set(r.campaign_id, [r]);
@@ -316,6 +353,18 @@ export default function StudioPage() {
                 >
                   Campaign
                 </button>
+                <button
+                  data-testid="mode-comic"
+                  onClick={() => setMode("comic")}
+                  className={cn(
+                    "rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors",
+                    mode === "comic"
+                      ? "bg-white text-black"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  Comic
+                </button>
                 {busy && (
                   <span className="flex items-center gap-1.5 pl-2 pr-1 text-[11px] text-accent">
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -325,7 +374,7 @@ export default function StudioPage() {
               </div>
 
               <AnimatePresence mode="wait">
-                {mode === "single" ? (
+                {mode === "single" && (
                   <motion.div
                     key="single"
                     initial={{ opacity: 0 }}
@@ -361,7 +410,8 @@ export default function StudioPage() {
                       </Button>
                     </div>
                   </motion.div>
-                ) : (
+                )}
+                {mode === "campaign" && (
                   <motion.div
                     key="campaign"
                     initial={{ opacity: 0 }}
@@ -402,6 +452,78 @@ export default function StudioPage() {
                       >
                         <Sparkles className="h-3.5 w-3.5" />
                         Generate campaign
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+                {mode === "comic" && (
+                  <motion.div
+                    key="comic"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.1 }}
+                    className="space-y-3"
+                  >
+                    <Textarea
+                      data-testid="comic-theme"
+                      value={comicTheme}
+                      onChange={(e) => setComicTheme(e.target.value)}
+                      rows={3}
+                      placeholder="A theme or idea, e.g. A robot afraid of the dark discovers a friendly ghost..."
+                      className="w-full resize-none rounded-2xl bg-black/30 border-line/40 text-sm placeholder:text-muted-foreground/40"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1 rounded-full bg-black/30 p-1">
+                        <button
+                          data-testid="comic-style-comic"
+                          onClick={() => setComicStyle("comic")}
+                          className={cn(
+                            "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+                            comicStyle === "comic"
+                              ? "bg-white text-black"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          Comic
+                        </button>
+                        <button
+                          data-testid="comic-style-anime"
+                          onClick={() => setComicStyle("anime")}
+                          className={cn(
+                            "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+                            comicStyle === "anime"
+                              ? "bg-white text-black"
+                              : "text-muted-foreground hover:text-foreground",
+                          )}
+                        >
+                          Anime
+                        </button>
+                      </div>
+                      <Select
+                        value={String(comicPages)}
+                        onValueChange={(v) => v && setComicPages(Number(v))}
+                      >
+                        <SelectTrigger className="h-9 w-[104px] rounded-full bg-black/30 border-line/40 text-sm">
+                          <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[3, 4, 5, 6].map((n) => (
+                            <SelectItem key={n} value={String(n)}>
+                              {n} pages
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        data-testid="generate-comic-button"
+                        onClick={generateComicFn}
+                        disabled={busy || !comicTheme.trim()}
+                        className="ml-auto h-9 rounded-full px-5 text-sm font-semibold gap-1.5"
+                      >
+                        <Wand2 className="h-3.5 w-3.5" />
+                        Generate comic
                       </Button>
                     </div>
                   </motion.div>
@@ -515,6 +637,11 @@ export default function StudioPage() {
         />
       )}
 
+      {/* Comics — theme -> Genblaze script + panels -> composed strip + narration */}
+      {comics.length > 0 && (
+        <ComicsSection comics={comics} onOpenComic={setSelectedComic} />
+      )}
+
       {/* B2 System of Record — proves live metrics come straight from B2, no separate DB */}
       {stats && <SystemOfRecordSection stats={stats} />}
 
@@ -555,6 +682,16 @@ export default function StudioPage() {
             }}
           />
         )}
+      </Dialog>
+
+      {/* Comic reader — every page's panel + narration, in sequence */}
+      <Dialog
+        open={selectedComic !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedComic(null);
+        }}
+      >
+        {selectedComic && <ComicReaderModal comic={selectedComic} />}
       </Dialog>
     </div>
   );
@@ -692,6 +829,173 @@ function CampaignModal({
             );
           })}
         </div>
+      </div>
+    </DialogContent>
+  );
+}
+
+function ComicsSection({
+  comics,
+  onOpenComic,
+}: {
+  comics: ComicResult[];
+  onOpenComic: (comic: ComicResult) => void;
+}) {
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="text-lg font-bold tracking-tight">Comics</h2>
+          <p className="text-xs text-muted-foreground/60 mt-0.5">
+            Theme in, full illustrated story out — script, panels, and
+            narration, every step provenance-tracked.
+          </p>
+        </div>
+        <span className="text-xs text-muted-foreground/60 shrink-0">
+          {comics.length} total
+        </span>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {comics.map((c) => {
+          const cover = c.composed_url ?? c.pages[0]?.image_url ?? undefined;
+          return (
+            <button
+              key={c.comic_id}
+              data-testid="comic-card"
+              data-comic-id={c.comic_id}
+              onClick={() => onOpenComic(c)}
+              className="group overflow-hidden rounded-2xl border border-line/60 bg-surface text-left transition-shadow hover:shadow-[0_0_0_1px_var(--accent-glow)]"
+            >
+              <div className="relative h-40 w-full overflow-hidden bg-surface-2">
+                {cover ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={cover}
+                    alt={c.theme}
+                    className="h-full w-full object-cover object-top transition group-hover:brightness-110"
+                  />
+                ) : (
+                  <Skeleton className="h-full w-full rounded-none" />
+                )}
+                <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-white/90">
+                  {c.style}
+                </span>
+                {c.script_verified && (
+                  <span className="absolute right-2 top-2 rounded-full bg-accent px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-accent-ink">
+                    Verified
+                  </span>
+                )}
+              </div>
+              <div className="p-3.5">
+                <p className="line-clamp-1 text-sm font-semibold">{c.theme}</p>
+                <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
+                  <BookOpen className="h-3 w-3" />
+                  {c.pages.length} page{c.pages.length === 1 ? "" : "s"}
+                </p>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ComicReaderModal({ comic }: { comic: ComicResult }) {
+  const [showScript, setShowScript] = useState(false);
+
+  return (
+    <DialogContent
+      data-testid="comic-modal"
+      className="sm:max-w-2xl p-0 gap-0 rounded-3xl"
+    >
+      <div className="max-h-[85vh] space-y-5 overflow-y-auto p-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground/70">
+              {comic.style}
+            </span>
+            {comic.script_verified && (
+              <span className="flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-accent-ink">
+                <ShieldCheck className="h-3 w-3" />
+                Script verified
+              </span>
+            )}
+          </div>
+          <h3 className="mt-2 text-xl font-black tracking-tight">{comic.theme}</h3>
+          <p className="mt-1 text-xs text-muted-foreground/60">
+            {comic.pages.length} pages &middot; {comic.date}
+          </p>
+        </div>
+
+        <Separator className="bg-line/50" />
+
+        <div className="space-y-6">
+          {comic.pages.map((p) => (
+            <div key={p.index} className="space-y-2">
+              <div className="relative overflow-hidden rounded-2xl border border-line/60 bg-surface-2">
+                {p.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.image_url} alt={p.image_prompt} className="w-full" />
+                ) : (
+                  <Skeleton className="h-64 w-full rounded-none" />
+                )}
+                <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-white/90">
+                  Page {p.index + 1}
+                </span>
+                {p.image_verified && (
+                  <span className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-accent px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-accent-ink">
+                    <ShieldCheck className="h-2.5 w-2.5" />
+                    Verified
+                  </span>
+                )}
+              </div>
+              <p className="text-sm leading-relaxed text-foreground/85">
+                {p.narration_text}
+              </p>
+              {p.narration_url && (
+                // eslint-disable-next-line jsx-a11y/media-has-caption
+                <audio
+                  controls
+                  src={p.narration_url}
+                  className="h-9 w-full rounded-full"
+                />
+              )}
+            </div>
+          ))}
+        </div>
+
+        <Separator className="bg-line/50" />
+
+        <div>
+          <button
+            onClick={() => setShowScript((s) => !s)}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground/60 hover:text-foreground transition-colors"
+          >
+            <FileJson2 className="h-3.5 w-3.5" />
+            {showScript ? "Hide" : "Show"} full script
+          </button>
+          <AnimatePresence>
+            {showScript && (
+              <motion.pre
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-2 max-h-56 overflow-auto rounded-2xl bg-surface-2 p-3 font-mono text-[10.5px] leading-relaxed text-muted-foreground whitespace-pre-wrap"
+              >
+                {comic.script_text}
+              </motion.pre>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <p className="text-[11px] leading-relaxed text-muted-foreground/50">
+          The script and every panel are real Genblaze pipeline runs, each
+          with its own signed, verified manifest on Backblaze B2. The
+          combined strip and narration audio are Veritas post-processing
+          (Pillow + edge-tts) — not Genblaze generations — but are still
+          hashed, stored, and indexed on B2 like everything else.
+        </p>
       </div>
     </DialogContent>
   );

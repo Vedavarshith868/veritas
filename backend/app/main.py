@@ -4,6 +4,9 @@ Endpoints:
   GET  /api/health                 - liveness + config sanity
   POST /api/generate               - run the provenance pipeline
   POST /api/campaign                - fan out N provable variants from one brief
+  POST /api/comic                  - generate a multi-page comic (script + panels + narration)
+  GET  /api/comics                 - list generated comics
+  POST /api/video-script           - generate a video shot list (script only, no rendering)
   GET  /api/runs                   - list recent generated runs (from B2 manifests)
   GET  /api/manifest?key=...       - fetch a full provenance manifest
   GET  /api/asset-url?key=...      - presigned GET URL for a private asset
@@ -23,7 +26,7 @@ from slowapi.util import get_remote_address
 
 from fastapi.responses import JSONResponse
 
-from . import catalog, certificate as cert, stats
+from . import catalog, certificate as cert, comics, stats, video as video_module
 from .config import get_settings
 from .pipeline import generate_campaign, generate_media
 from .storage import presigned_url
@@ -34,6 +37,8 @@ from .storage import presigned_url
 _LIMIT_GENERATE = os.getenv("RATE_LIMIT_GENERATE", "10/hour")
 _LIMIT_CAMPAIGN = os.getenv("RATE_LIMIT_CAMPAIGN", "3/hour")
 _LIMIT_VERIFY = os.getenv("RATE_LIMIT_VERIFY", "60/hour")
+_LIMIT_COMIC = os.getenv("RATE_LIMIT_COMIC", "3/hour")
+_LIMIT_VIDEO_SCRIPT = os.getenv("RATE_LIMIT_VIDEO_SCRIPT", "10/hour")
 limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(title="Veritas API", version="0.1.0")
@@ -120,6 +125,71 @@ def campaign(request: Request, req: CampaignRequest) -> dict:
         "succeeded": len(variants),
         "variants": variants,
     }
+
+
+class ComicRequest(BaseModel):
+    theme: str = Field(min_length=1, max_length=500)
+    pages: int = Field(default=4, ge=1, le=8)
+    style: str = Field(default="comic")
+
+
+@app.post("/api/comic")
+@limiter.limit(_LIMIT_COMIC)
+def create_comic(request: Request, req: ComicRequest) -> dict:
+    """Full comic pipeline: Genblaze script step -> Genblaze batch image
+    generation -> Pillow composite -> edge-tts narration. See comics.py
+    for the exact Genblaze/non-Genblaze boundary."""
+    from dataclasses import asdict
+
+    try:
+        result = comics.generate_comic(req.theme, pages=req.pages, style=req.style)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"comic generation failed: {exc}") from exc
+    return _attach_comic_urls(asdict(result))
+
+
+@app.get("/api/comics")
+def get_comics(limit: int = Query(default=20, ge=1, le=100)) -> dict:
+    return {"comics": [_attach_comic_urls(c) for c in comics.list_comics(limit=limit)]}
+
+
+def _attach_comic_urls(d: dict) -> dict:
+    """Presigned GET URLs are never persisted (they expire) -- attach them
+    fresh to a comic record on every read, whether it just came off the
+    generation pipeline or was re-read from a stored comic.json."""
+    d = dict(d)
+    d["composed_url"] = (
+        presigned_url(d["composed_asset_key"]) if d.get("composed_asset_key") else None
+    )
+    pages = []
+    for p in d.get("pages") or []:
+        p = dict(p)
+        p["image_url"] = presigned_url(p["image_asset_key"]) if p.get("image_asset_key") else None
+        p["narration_url"] = (
+            presigned_url(p["narration_asset_key"]) if p.get("narration_asset_key") else None
+        )
+        pages.append(p)
+    d["pages"] = pages
+    return d
+
+
+class VideoScriptRequest(BaseModel):
+    idea: str = Field(min_length=1, max_length=500)
+
+
+@app.post("/api/video-script")
+@limiter.limit(_LIMIT_VIDEO_SCRIPT)
+def create_video_script(request: Request, req: VideoScriptRequest) -> dict:
+    """Real Genblaze text-generation run for a shot list. No video
+    provider is called -- see video.py's module docstring and the
+    /video page for why."""
+    try:
+        result = video_module.generate_video_script(req.idea)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"script generation failed: {exc}") from exc
+    d = result.__dict__.copy()
+    d["shots"] = [s.__dict__ for s in result.shots]
+    return d
 
 
 @app.get("/api/runs")

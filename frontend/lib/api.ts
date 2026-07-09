@@ -53,6 +53,53 @@ export type CampaignResponse = {
   variants: GenerateResponse[];
 };
 
+export type ComicPage = {
+  index: number;
+  image_prompt: string;
+  narration_text: string;
+  image_run_id: string | null;
+  image_manifest_key: string | null;
+  image_asset_key: string | null;
+  image_sha256: string | null;
+  image_verified: boolean;
+  narration_asset_key: string | null;
+  narration_sha256: string | null;
+  image_url: string | null;
+  narration_url: string | null;
+};
+
+export type ComicResult = {
+  comic_id: string;
+  theme: string;
+  style: string;
+  date: string;
+  script_run_id: string | null;
+  script_manifest_key: string | null;
+  script_verified: boolean;
+  script_text: string;
+  composed_asset_key: string | null;
+  composed_sha256: string | null;
+  composed_url: string | null;
+  pages: ComicPage[];
+};
+
+export type VideoShot = {
+  index: number;
+  description: string;
+  narration: string;
+  duration_sec: number;
+};
+
+export type VideoScriptResult = {
+  run_id: string | null;
+  manifest_key: string | null;
+  verified: boolean;
+  idea: string;
+  date: string;
+  script_text: string;
+  shots: VideoShot[];
+};
+
 export type Health = {
   status: string;
   bucket: string;
@@ -140,4 +187,23 @@ export const api = {
       jsonOrThrow<VerifyResponse>(r),
     );
   },
+
+  comic: (theme: string, pages = 4, style = "comic") =>
+    fetch("/api/comic", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ theme, pages, style }),
+    }).then((r) => jsonOrThrow<ComicResult>(r)),
+
+  comics: (limit = 20) =>
+    fetch(`/api/comics?limit=${limit}`).then((r) =>
+      jsonOrThrow<{ comics: ComicResult[] }>(r),
+    ),
+
+  videoScript: (idea: string) =>
+    fetch("/api/video-script", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idea }),
+    }).then((r) => jsonOrThrow<VideoScriptResult>(r)),
 };

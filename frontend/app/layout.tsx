@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Info } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -61,8 +61,22 @@ export default function RootLayout({
                 >
                   Embed
                 </Link>
+                <Link
+                  href="/video"
+                  className="rounded-full px-3.5 py-1.5 text-foreground/70 hover:bg-white/5 hover:text-foreground transition-colors"
+                >
+                  Video
+                </Link>
               </nav>
               <div className="ml-auto flex items-center gap-2">
+                <Link
+                  href="/video"
+                  title="Full Genblaze pipeline built for video generation — script planning is live with real provenance. Clip rendering is intentionally not activated for this submission (requires paid provider credits). See /video for details."
+                  className="hidden sm:flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft px-3 py-1 text-[11px] font-medium text-accent hover:bg-accent/15 transition-colors"
+                >
+                  <Info className="h-3 w-3" />
+                  Video: script-only (credits pending)
+                </Link>
                 <span className="rounded-full bg-white/5 px-3 py-1 text-[11px] font-medium text-muted-foreground">
                   Genblaze
                 </span>
